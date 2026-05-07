@@ -198,8 +198,21 @@ Si la factura referencia el embarque (vessel, BL/AWB, ports, container numbers, 
 - Si ves "FOB SHANGHAI" pero no menciona moneda explícita y los precios tienen "$" → asume USD solo si el documento es claramente internacional.
 - country_of_origin del shipment puede inferirse del seller si la factura es de exportación clara y todos los items vienen del mismo país.
 
-15. CLAVES DEL JSON
+15. NORMALIZACIÓN DE OUTLIERS POR PATRÓN OCR
+Cuando un campo aparece repetido en múltiples filas/items y la MAYORÍA sigue un patrón claro (mismo prefijo, mismo formato, misma estructura) pero unas pocas filas son outliers que difieren por solo 1-2 caracteres, asume que el outlier es un error de OCR y normaliza al patrón dominante.
+Aplica SOLO si las tres condiciones se cumplen:
+(a) el patrón dominante cubre ≥70% de las filas,
+(b) la diferencia involucra caracteres típicamente confundibles por el OCR: I/l/1, O/0/Q, B/8, S/5, G/6/C, Z/2, D/0, U/V/Y, rn/m, cl/d, vv/w, ñ/n, etc.,
+(c) la corrección al patrón dominante es ortográficamente plausible.
+Ejemplos:
+- 8 ítems con códigos "ABC-001"..."ABC-014" + 1 con "A8C-007" → corregir a "ABC-007".
+- 5 ítems con "PROD-123"..."PROD-789" + 1 con "PR0D-456" → corregir a "PROD-456".
+- 9 contenedores con prefijo "EMCU" + 1 con "ENCU" → corregir a "EMCU".
+- 7 fechas con formato "2024-07-XX" + 1 "2O24-07-15" → "2024-07-15".
+NO apliques la regla si el outlier difiere en más de 2 caracteres, si no hay patrón dominante claro, o si el "outlier" podría legítimamente representar algo distinto.
+
+16. CLAVES DEL JSON
 Las claves del JSON DEBEN ser EXACTAMENTE las del esquema. NUNCA las traduzcas, renombres ni adaptes a las etiquetas del documento. additional_attributes es el ÚNICO lugar donde puedes usar claves libres.
 
-16. IDIOMA
+17. IDIOMA
 Los valores de texto se preservan en su idioma original (no traduzcas nombres, descripciones, direcciones). Solo normaliza formato (mayúsculas no son obligatorias)."""

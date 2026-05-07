@@ -128,8 +128,14 @@ Datos como color, talla, fabric, modelo, batch, lot, expiry, voltage, etc. → i
 - Valores que solo contengan "-", "—", "N/A", "NA", "" → null.
 - Etiquetas sin valor → null. NUNCA copies la etiqueta.
 
-7. CLAVES DEL JSON
+7. NORMALIZACIÓN DE OUTLIERS POR PATRÓN OCR
+Cuando un campo aparece repetido en múltiples filas/items y la MAYORÍA sigue un patrón claro pero unas pocas filas son outliers que difieren por solo 1-2 caracteres, asume que el outlier es un error de OCR y normaliza al patrón dominante.
+Aplica SOLO si: (a) el patrón dominante cubre ≥70% de las filas, (b) la diferencia involucra caracteres típicamente confundibles por el OCR (I/l/1, O/0/Q, B/8, S/5, G/6/C, Z/2, D/0, U/V/Y, rn/m, cl/d, etc.), (c) la corrección es ortográficamente plausible.
+Ejemplo: 9 bultos con prefijo "PKG-" + 1 con "PK6-" → corregir a "PKG-".
+NO apliques si el outlier difiere en más de 2 caracteres o si no hay patrón dominante claro.
+
+8. CLAVES DEL JSON
 Las claves DEBEN ser EXACTAMENTE las del esquema. additional_attributes es el único lugar con claves libres.
 
-8. IDIOMA
+9. IDIOMA
 Preserva los valores en su idioma original. Solo normaliza el formato (números, fechas)."""
