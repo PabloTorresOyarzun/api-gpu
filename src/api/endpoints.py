@@ -4,7 +4,7 @@ import tempfile
 import logging
 from typing import Annotated
 
-from litestar import post, Request
+from litestar import post, get, Request
 from litestar.params import Body
 from litestar.enums import RequestEncodingType
 from litestar.datastructures import UploadFile
@@ -18,6 +18,12 @@ from .middleware import validar_api_key
 from .helpers import convertir_a_pdf, parsear_textos_ocr
 
 logger = logging.getLogger(__name__)
+
+
+@get("/health", tags=["Sistema"])
+async def health() -> dict:
+    """Verifica que la API esté operativa."""
+    return {"status": "ok"}
 
 
 @post("/procesar", tags=["Tratamiento"])

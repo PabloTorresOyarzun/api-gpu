@@ -10,7 +10,7 @@ from litestar.middleware import DefineMiddleware
 
 from .services.pipeline.extractor import cargar_modelos
 from .api.middleware import FiltroIPMiddleware
-from .api.endpoints import procesar_endpoint
+from .api.endpoints import procesar_endpoint, health
 
 
 async def on_startup() -> None:
@@ -20,7 +20,7 @@ async def on_startup() -> None:
 
 
 app = Litestar(
-    route_handlers=[procesar_endpoint],
+    route_handlers=[procesar_endpoint, health],
     middleware=[DefineMiddleware(FiltroIPMiddleware)],
     on_startup=[on_startup],
     openapi_config=OpenAPIConfig(
