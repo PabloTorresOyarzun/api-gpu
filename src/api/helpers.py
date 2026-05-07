@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from ..services.converter import (
+from ..services.pipeline.converter import (
     validar_pdf,
     validar_tamano_archivo,
     es_archivo_excel,

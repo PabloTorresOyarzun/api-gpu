@@ -10,9 +10,9 @@ from litestar.enums import RequestEncodingType
 from litestar.datastructures import UploadFile
 from litestar.exceptions import HTTPException
 
-from ..services.extractor import procesar_pdf, ocr_pdf
-from ..services.sanitizer import sanitizar_pdf
-from ..services.classifier import clasificar_paginas, segmentar_pdf
+from ..services.pipeline.extractor import procesar_pdf, ocr_pdf
+from ..services.pipeline.sanitizer import sanitizar_pdf
+from ..services.pipeline.classifier import clasificar_paginas, segmentar_pdf
 
 from .middleware import validar_api_key
 from .helpers import convertir_a_pdf, parsear_textos_ocr

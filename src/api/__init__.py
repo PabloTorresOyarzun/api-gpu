@@ -8,7 +8,7 @@ from litestar.openapi.spec import Components, SecurityScheme
 from litestar.openapi.plugins import SwaggerRenderPlugin
 from litestar.middleware import DefineMiddleware
 
-from ..services.extractor import cargar_modelos
+from ..services.pipeline.extractor import cargar_modelos
 from .middleware import FiltroIPMiddleware
 from .endpoints import (
     extraer_endpoint,
