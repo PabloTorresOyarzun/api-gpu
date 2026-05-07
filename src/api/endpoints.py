@@ -80,22 +80,22 @@ async def procesar_endpoint(
                 "paginas": doc["paginas"],
             }
 
-            if doc["tipo"] == "DOCUMENTO_TRANSPORTE":
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                    tmp.write(doc["pdf_bytes"])
-                    ruta_doc = tmp.name
-                try:
-                    datos_bl = await asyncio.to_thread(procesar_pdf, ruta_doc)
-                    doc_resultado["datos_extraidos"] = datos_bl
-                except Exception as e:
-                    logger.warning(f"Error extrayendo BL de segmento {doc['paginas']}: {e}")
-                    doc_resultado["datos_extraidos"] = None
-                    doc_resultado["error_extraccion"] = str(e)
-                finally:
-                    if os.path.exists(ruta_doc):
-                        os.unlink(ruta_doc)
-            else:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                tmp.write(doc["pdf_bytes"])
+                ruta_doc = tmp.name
+            try:
+                datos = await asyncio.to_thread(procesar_pdf, ruta_doc, doc["tipo"])
+                doc_resultado["datos_extraidos"] = datos
+            except ValueError:
+                # Tipo sin prompt configurado — extracción no soportada todavía
                 doc_resultado["datos_extraidos"] = None
+            except Exception as e:
+                logger.warning(f"Error extrayendo segmento {doc['tipo']} págs {doc['paginas']}: {e}")
+                doc_resultado["datos_extraidos"] = None
+                doc_resultado["error_extraccion"] = str(e)
+            finally:
+                if os.path.exists(ruta_doc):
+                    os.unlink(ruta_doc)
 
             resultados.append(doc_resultado)
 
