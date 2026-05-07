@@ -25,4 +25,4 @@ COPY . .
 
 EXPOSE 8500
 
-CMD ["litestar", "--app", "src:app", "run", "--host", "0.0.0.0", "--port", "8500"]
+CMD ["litestar", "--app", "src.main:app", "run", "--host", "0.0.0.0", "--port", "8500"]
