@@ -1,0 +1,25 @@
+services:
+  bl-extractor:
+    build: .
+    container_name: bl-extractor
+    restart: unless-stopped
+    volumes:
+      - surya-cache:/root/.cache/datalab
+    env_file:
+      - .env
+    environment:
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+      - RECOGNITION_BATCH_SIZE=8
+      - DETECTOR_BATCH_SIZE=2
+    ports:
+      - "8500:8500"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]
+
+volumes:
+  surya-cache:
