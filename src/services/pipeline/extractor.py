@@ -60,71 +60,14 @@ def _preprocess_image(pil_image: Image.Image) -> Image.Image:
     return Image.fromarray(rgb)
 
 
-def _reconstruct_text_layout_aware(text_lines) -> str:
+def _reconstruct_text(text_lines) -> str:
     """
-    Reconstruye el texto preservando estructura espacial:
-    - Agrupa fragmentos OCR en filas visuales según overlap vertical de sus bboxes.
-    - Dentro de cada fila, ordena de izquierda a derecha y separa con espacios proporcionales
-      al gap horizontal (indicador de columnas).
-    Esto ayuda al LLM a interpretar tablas correctamente.
+    Une las líneas detectadas por Surya preservando su orden natural de lectura.
+    Surya ya entrega text_lines ordenados correctamente — re-ordenar por bboxes
+    en escaneados con skew leve mezcla filas adyacentes en tablas, así que
+    confiamos en el orden original.
     """
-    if not text_lines:
-        return ""
-
-    entries = []
-    for tl in text_lines:
-        bbox = getattr(tl, "bbox", None)
-        text = getattr(tl, "text", "") or ""
-        if bbox and len(bbox) == 4:
-            x0, y0, x1, y1 = bbox
-            entries.append({
-                "x0": float(x0), "y0": float(y0),
-                "x1": float(x1), "y1": float(y1),
-                "text": text,
-            })
-        else:
-            # Sin bbox: anexar al final como una línea propia.
-            entries.append(None)
-            entries[-1] = {"x0": 0, "y0": 1e9 + len(entries), "x1": 0, "y1": 1e9 + len(entries) + 1, "text": text}
-
-    if not entries:
-        return ""
-
-    # Ordenar por y0 (top-to-bottom).
-    entries.sort(key=lambda e: (e["y0"], e["x0"]))
-
-    # Agrupar en filas visuales por overlap vertical.
-    rows = []
-    current_row = [entries[0]]
-    for e in entries[1:]:
-        last = current_row[-1]
-        h = max(last["y1"] - last["y0"], e["y1"] - e["y0"], 1.0)
-        # Misma fila si el centro vertical de e cae dentro del rango vertical del último item de la fila.
-        e_center = (e["y0"] + e["y1"]) / 2
-        if last["y0"] - h * 0.3 <= e_center <= last["y1"] + h * 0.3:
-            current_row.append(e)
-        else:
-            rows.append(current_row)
-            current_row = [e]
-    rows.append(current_row)
-
-    # Reconstruir cada fila ordenando por x0 e insertando separación proporcional al gap.
-    output_lines = []
-    for row in rows:
-        row.sort(key=lambda e: e["x0"])
-        parts = [row[0]["text"]]
-        for prev, curr in zip(row, row[1:]):
-            gap = curr["x0"] - prev["x1"]
-            avg_h = (prev["y1"] - prev["y0"] + curr["y1"] - curr["y0"]) / 2
-            # Gap > altura promedio sugiere columna distinta → separador más fuerte.
-            if gap > avg_h * 1.5:
-                parts.append("    ")
-            else:
-                parts.append(" ")
-            parts.append(curr["text"])
-        output_lines.append("".join(parts))
-
-    return "\n".join(output_lines)
+    return "\n".join(getattr(tl, "text", "") or "" for tl in text_lines)
 
 
 def ocr_pdf(ruta_pdf: str) -> str:
@@ -147,7 +90,7 @@ def ocr_pdf(ruta_pdf: str) -> str:
         langs = [["es", "en"]] * len(imagenes)
         predicciones = _recognition_predictor(imagenes, langs, det_predictor=_detection_predictor)
         for pagina in predicciones:
-            texto_pagina = _reconstruct_text_layout_aware(pagina.text_lines)
+            texto_pagina = _reconstruct_text(pagina.text_lines)
             texto_upper = texto_pagina.upper()
             palabras = len(texto_pagina.split())
 
