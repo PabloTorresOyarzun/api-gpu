@@ -215,7 +215,7 @@ Si la factura referencia el embarque (vessel, BL/AWB, ports, container numbers, 
 Cuando un campo aparece repetido en múltiples filas/items y la MAYORÍA sigue un patrón claro (mismo prefijo, mismo formato, misma estructura) pero unas pocas filas son outliers que difieren por solo 1-2 caracteres, asume que el outlier es un error de OCR y normaliza al patrón dominante.
 Aplica SOLO si las tres condiciones se cumplen:
 (a) el patrón dominante cubre ≥70% de las filas,
-(b) la diferencia involucra caracteres típicamente confundibles por el OCR: I/l/1, O/0/Q, B/8, S/5, G/6/C, Z/2, D/0, U/V/Y, rn/m, cl/d, vv/w, ñ/n, etc.,
+(b) la diferencia involucra caracteres típicamente confundibles por el OCR: I/l/1, O/0/Q, B/8, S/5, G/6/C, Z/2, D/0, U/V/Y, rn/m, cl/d, vv/w, ñ/n, o caracteres CJK (chinos/japoneses/coreanos como 线, 口, 一, 二, 三, 工, 大, 川, 日, 目, 田) que aparecen donde el patrón dominante usa solo ASCII — el OCR a veces "alucina" un ideograma al malinterpretar trazos de dígitos o letras (ej: "N10线" → "N1035", "PROD口123" → "PROD0123", "ABC一23" → "ABC-23"),
 (c) la corrección al patrón dominante es ortográficamente plausible.
 Ejemplos:
 - 8 ítems con códigos "ABC-001"..."ABC-014" + 1 con "A8C-007" → corregir a "ABC-007".

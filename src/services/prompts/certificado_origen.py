@@ -143,7 +143,7 @@ issuing_body es la organización que emite (cámara de comercio, ministerio, aut
 
 10. NORMALIZACIÓN DE OUTLIERS POR PATRÓN OCR
 Cuando un campo aparece repetido en múltiples filas/items y la MAYORÍA sigue un patrón claro pero unas pocas filas son outliers que difieren por solo 1-2 caracteres, asume que el outlier es un error de OCR y normaliza al patrón dominante.
-Aplica SOLO si: (a) el patrón dominante cubre ≥70% de las filas, (b) la diferencia involucra caracteres típicamente confundibles por el OCR (I/l/1, O/0/Q, B/8, S/5, G/6/C, Z/2, D/0, U/V/Y, rn/m, cl/d, etc.), (c) la corrección es ortográficamente plausible.
+Aplica SOLO si: (a) el patrón dominante cubre ≥70% de las filas, (b) la diferencia involucra caracteres típicamente confundibles por el OCR (I/l/1, O/0/Q, B/8, S/5, G/6/C, Z/2, D/0, U/V/Y, rn/m, cl/d, etc.) o caracteres CJK (chinos/japoneses/coreanos como 线, 口, 一, 二, 三, 工, 大, 川, 日, 目) que aparecen donde el patrón usa solo ASCII (ej: "8501.线" → "8501.42", "CHIN口" → "CHINA"), (c) la corrección es ortográficamente plausible.
 Ejemplos: 8 HS codes "8501.XX" + 1 "85O1.42" → "8501.42"; 6 países "CHINA" + 1 "CHIMA" → "CHINA".
 NO apliques si el outlier difiere en más de 2 caracteres o si no hay patrón dominante claro.
 

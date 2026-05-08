@@ -155,7 +155,7 @@ NO los confundas — son tres roles distintos.
 
 12. NORMALIZACIÓN DE OUTLIERS POR PATRÓN OCR
 Cuando un campo aparece repetido en múltiples contenedores/filas y la MAYORÍA sigue un patrón claro pero unas pocas son outliers que difieren por solo 1-2 caracteres, asume que el outlier es un error de OCR y normaliza al patrón dominante.
-Aplica SOLO si: (a) el patrón dominante cubre ≥70% de los items, (b) la diferencia involucra caracteres típicamente confundibles por el OCR (I/l/1, O/0/Q, B/8, S/5, G/6/C, Z/2, D/0, U/V/Y, rn/m, etc.), (c) la corrección es ortográficamente plausible.
+Aplica SOLO si: (a) el patrón dominante cubre ≥70% de los items, (b) la diferencia involucra caracteres típicamente confundibles por el OCR (I/l/1, O/0/Q, B/8, S/5, G/6/C, Z/2, D/0, U/V/Y, rn/m, etc.) o caracteres CJK (chinos/japoneses/coreanos como 线, 口, 一, 二, 三, 工, 大, 川, 日, 目) que aparecen donde el patrón usa solo ASCII (ej: "EMCU线65" → "EMCU8665", "口MCU8613665" → "0MCU8613665"), (c) la corrección es ortográficamente plausible.
 Ejemplo: 9 contenedores con prefijo "EMCU" + 1 con "ENCU" → corregir a "EMCU"; 5 sellos "EMCULH64XX" + 1 "ENCULH6403" → corregir.
 NO apliques si el outlier difiere en más de 2 caracteres o si no hay patrón dominante claro.
 

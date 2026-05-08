@@ -197,8 +197,8 @@ def extraer_documento(texto_documento: str, tipo_documento: str) -> dict:
             "think": False,
             "keep_alive": 0,
             "options": {
-                "num_ctx": 16384,
-                "num_predict": 8192,
+                "num_ctx": 24576,
+                "num_predict": 12288,
                 "temperature": 0,
                 "top_p": 0.9,
                 "top_k": 20,
