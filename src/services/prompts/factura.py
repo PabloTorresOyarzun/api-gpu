@@ -137,6 +137,7 @@ unit_of_measure debe medir CUÁNTOS o CUÁNTO se vende del producto. Valores com
 
 2. SELLER vs SHIPPER vs MANUFACTURER
 seller es quien EMITE la factura y cobra. Aparece en encabezado/firma. Manufacturer (fabricante) puede ser distinto y va en additional_attributes del item correspondiente si aparece. shipper (en el BL) puede o no coincidir con seller — no lo confundas.
+TELÉFONOS Y EMAILS POR CÓDIGO DE PAÍS: el código del teléfono debe ser consistente con el país de la entidad. Ejemplos de códigos: China +86, Chile +56, EE.UU. +1, Alemania +49, Brasil +55, India +91, Italia +39, España +34, México +52, Vietnam +84, Turquía +90. Si en el pie de página o en una sección genérica aparece un teléfono con código de país DISTINTO al país del seller, ese teléfono NO es del seller (probablemente es del buyer, agente local o representante). En ese caso devuelve seller.phone: null y, si corresponde claramente al buyer (mismo código de país que el buyer), úsalo para buyer.phone. Lo mismo aplica para emails con dominios geográficos (.cn, .cl, .de, etc.) cuando hay desajuste evidente.
 
 3. BUYER vs SHIP_TO vs CONSIGNEE
 buyer es quien COMPRA y paga (cliente fiscal). ship_to es el destino físico de la mercancía. Si la factura tiene un solo "TO" o "BILL TO", llena buyer y deja ship_to en null. Si distingue "BILL TO" / "SOLD TO" de "SHIP TO" / "DELIVER TO", llena ambos.
@@ -181,6 +182,18 @@ tax_breakdown es una LISTA. Cada impuesto en su propio objeto (VAT, IVA, GST, sa
 
 11. DATOS BANCARIOS
 Si la factura incluye sección "Bank Information", "Beneficiary", "Payment Instructions", "Wire Transfer Details" o similar, llena bank_info COMPLETO. Es información crítica para conciliación de pagos.
+
+11.b PAYMENT_TERMS vs PAYMENT_METHOD
+payment_terms: texto LITERAL de las condiciones (ej. "30% Deposit, 70% Balance against B/L copy", "Net 30 days", "100% T/T in advance", "L/C at sight").
+payment_method: el MECANISMO ESTÁNDAR de pago, mapeado al vocabulario controlado. Reglas de mapeo (interpreta el SIGNIFICADO, no busques la palabra literal):
+- Si menciona "T/T", "telegraphic transfer", "wire transfer", "bank transfer", "transferencia", o pagos parciales con porcentajes (ej. "30% deposit + 70% balance", "50/50", "advance + balance against shipment/B/L copy") → "T/T". Los pagos por cuotas/depósito + saldo son T/T por definición; NO son OPEN_ACCOUNT.
+- Si menciona "L/C", "Letter of Credit", "Carta de Crédito", "irrevocable LC at sight" → "L/C".
+- Si menciona "D/P" (Documents against Payment), "CAD" (Cash Against Documents) → "D/P" o "CAD".
+- Si menciona "D/A" (Documents against Acceptance) → "D/A".
+- Si menciona "Cash", "efectivo", pago al recibir → "CASH".
+- "OPEN_ACCOUNT" SOLO aplica si las condiciones indican expresamente cuenta abierta / crédito puro a plazo SIN un mecanismo bancario específico (ej. "Net 30", "Net 60", "Open Account 90 days") y NO hay depósitos ni LC ni T/T mencionado. NO uses OPEN_ACCOUNT como default cuando hay términos como depósito + saldo.
+- Si las condiciones son ambiguas o no calzan claramente con el vocabulario, devuelve null. Es preferible null a una clasificación incorrecta.
+payment_terms siempre se llena con el texto literal aunque payment_method sea null.
 
 12. DATOS DE TRANSPORTE EN LA FACTURA
 Si la factura referencia el embarque (vessel, BL/AWB, ports, container numbers, weights), llena el bloque shipment. Esta información cruza con el BL en aduana. Si la factura no incluye estos datos, devuelve los campos en null.
