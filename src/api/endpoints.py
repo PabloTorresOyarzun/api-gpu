@@ -10,7 +10,7 @@ from litestar.enums import RequestEncodingType
 from litestar.datastructures import UploadFile
 from litestar.exceptions import HTTPException
 
-from ..services.pipeline.extractor import procesar_pdf, ocr_pdf
+from ..services.pipeline.extractor import procesar_pdf, ocr_pdf, TipoDocumentoNoSoportado
 from ..services.pipeline.sanitizer import sanitizar_pdf
 from ..services.pipeline.classifier import clasificar_paginas, segmentar_pdf
 
@@ -86,7 +86,7 @@ async def procesar_endpoint(
             try:
                 datos = await asyncio.to_thread(procesar_pdf, ruta_doc, doc["tipo"])
                 doc_resultado["datos_extraidos"] = datos
-            except ValueError:
+            except TipoDocumentoNoSoportado:
                 # Tipo sin prompt configurado — extracción no soportada todavía
                 doc_resultado["datos_extraidos"] = None
             except Exception as e:

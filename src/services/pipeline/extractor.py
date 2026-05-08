@@ -28,6 +28,10 @@ _PROMPT_MAP = {
 }
 
 
+class TipoDocumentoNoSoportado(Exception):
+    """El tipo de documento no tiene prompt configurado para extracción."""
+
+
 def cargar_modelos():
     global _recognition_predictor, _detection_predictor
     if _recognition_predictor is None:
@@ -170,7 +174,7 @@ def ocr_pdf(ruta_pdf: str) -> str:
 def extraer_documento(texto_documento: str, tipo_documento: str) -> dict:
     prompt_sistema = _PROMPT_MAP.get(tipo_documento)
     if not prompt_sistema:
-        raise ValueError(f"Sin prompt configurado para tipo de documento: {tipo_documento}")
+        raise TipoDocumentoNoSoportado(f"Sin prompt configurado para tipo de documento: {tipo_documento}")
 
     prompt_usuario = (
         "NOTA DE FORMATO: El texto fue extraído por OCR y organizado en bloques espaciales "
@@ -194,7 +198,7 @@ def extraer_documento(texto_documento: str, tipo_documento: str) -> dict:
             "keep_alive": 0,
             "options": {
                 "num_ctx": 16384,
-                "num_predict": 4096,
+                "num_predict": 8192,
                 "temperature": 0,
                 "top_p": 0.9,
                 "top_k": 20,
