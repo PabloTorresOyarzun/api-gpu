@@ -60,14 +60,72 @@ def _preprocess_image(pil_image: Image.Image) -> Image.Image:
     return Image.fromarray(rgb)
 
 
+def _get_bbox(text_line):
+    """Devuelve [x1, y1, x2, y2] del text_line o None si no está disponible."""
+    bbox = getattr(text_line, "bbox", None)
+    if bbox is not None and len(bbox) == 4:
+        return bbox
+    polygon = getattr(text_line, "polygon", None)
+    if polygon and len(polygon) >= 2:
+        xs = [p[0] for p in polygon]
+        ys = [p[1] for p in polygon]
+        return [min(xs), min(ys), max(xs), max(ys)]
+    return None
+
+
+def _group_text_lines(text_lines, v_gap_px: int = 50):
+    """
+    Agrupa líneas consecutivas que estén a menos de v_gap_px píxeles de distancia vertical.
+    Líneas en columnas horizontalmente separadas (>100px sin overlap) inician un bloque nuevo.
+    NO reordena — preserva el orden original de Surya en todo momento.
+
+    v_gap_px=50: a 500 DPI un interlineado normal (~17px) queda dentro del bloque;
+    un salto de párrafo (~80-100px) abre uno nuevo.
+    """
+    if not text_lines:
+        return []
+
+    groups = []
+    current_group = [text_lines[0]]
+
+    for line in text_lines[1:]:
+        prev_bbox = _get_bbox(current_group[-1])
+        curr_bbox = _get_bbox(line)
+
+        if prev_bbox is None or curr_bbox is None:
+            current_group.append(line)
+            continue
+
+        vertical_gap = curr_bbox[1] - prev_bbox[3]  # top_curr - bottom_prev
+        h_overlap = min(prev_bbox[2], curr_bbox[2]) - max(prev_bbox[0], curr_bbox[0])
+        different_column = h_overlap < -100  # separados >100px horizontalmente
+
+        if vertical_gap <= v_gap_px and not different_column:
+            current_group.append(line)
+        else:
+            groups.append(current_group)
+            current_group = [line]
+
+    groups.append(current_group)
+    return groups
+
+
 def _reconstruct_text(text_lines) -> str:
     """
-    Une las líneas detectadas por Surya preservando su orden natural de lectura.
-    Surya ya entrega text_lines ordenados correctamente — re-ordenar por bboxes
-    en escaneados con skew leve mezcla filas adyacentes en tablas, así que
-    confiamos en el orden original.
+    Agrupa líneas por proximidad espacial y las envuelve en [BLOQUE_N].
+    Preserva el orden original de Surya — nunca reordena líneas.
     """
-    return "\n".join(getattr(tl, "text", "") or "" for tl in text_lines)
+    groups = _group_text_lines(text_lines)
+    parts = []
+    n = 1
+    for group in groups:
+        lines = [getattr(tl, "text", "") or "" for tl in group]
+        lines = [l for l in lines if l.strip()]
+        if not lines:
+            continue
+        parts.append(f"[BLOQUE_{n}]\n" + "\n".join(lines) + f"\n[/BLOQUE_{n}]")
+        n += 1
+    return "\n\n".join(parts)
 
 
 def ocr_pdf(ruta_pdf: str) -> str:
@@ -114,7 +172,15 @@ def extraer_documento(texto_documento: str, tipo_documento: str) -> dict:
     if not prompt_sistema:
         raise ValueError(f"Sin prompt configurado para tipo de documento: {tipo_documento}")
 
-    prompt_usuario = f"Documento a procesar:\n\n{texto_documento}"
+    prompt_usuario = (
+        "NOTA DE FORMATO: El texto fue extraído por OCR y organizado en bloques espaciales "
+        "[BLOQUE_N]...[/BLOQUE_N]. Las líneas dentro de un mismo bloque estaban físicamente "
+        "próximas en el documento original. Usa esto como pista contextual: un teléfono, "
+        "email o dirección que aparece dentro del mismo bloque que el nombre del SELLER o "
+        "SHIPPER pertenece a esa entidad; si está en un bloque distinto (por ejemplo, en el "
+        "pie de página o en el bloque del BUYER), NO lo asignes al vendedor ni viceversa.\n\n"
+        f"Documento a procesar:\n\n{texto_documento}"
+    )
 
     respuesta = requests.post(
         URL_OLLAMA,
