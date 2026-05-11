@@ -10,12 +10,12 @@ from litestar.enums import RequestEncodingType
 from litestar.datastructures import UploadFile
 from litestar.exceptions import HTTPException
 
-from ..services.pipeline.extractor import procesar_pdf, pdf_a_imagenes, ocr_paginas_vl, TipoDocumentoNoSoportado
+from ..services.pipeline.extractor import procesar_pdf, ocr_pdf, TipoDocumentoNoSoportado
 from ..services.pipeline.sanitizer import sanitizar_pdf
 from ..services.pipeline.classifier import clasificar_paginas, segmentar_pdf
 
 from .middleware import validar_api_key
-from .helpers import convertir_a_pdf
+from .helpers import convertir_a_pdf, parsear_textos_ocr
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +36,10 @@ async def procesar_endpoint(
 
     1. Convierte a PDF (si es Excel o imagen)
     2. Sanitiza (repara, analiza calidad, corrige rotación)
-    3. Extrae texto por página vía qwen3-vl (para clasificación)
+    3. OCR con Surya en GPU
     4. Clasifica páginas por tipo de documento
     5. Segmenta en documentos individuales
-    6. Extrae datos estructurados vía qwen3-vl (visión directa sobre imágenes)
+    6. Extrae datos estructurados de los BL detectados
 
     Acepta: PDF, Excel (.xlsx/.xls/.xlsm), imágenes (.jpg/.png/.tiff/etc.)
     """
@@ -55,18 +55,18 @@ async def procesar_endpoint(
         logger.info(f"[procesar] Paso 1: Sanitizando ({len(pdf_bytes)} bytes)")
         pdf_bytes, alertas = await asyncio.to_thread(sanitizar_pdf, pdf_bytes)
 
-        logger.info("[procesar] Paso 2: Extrayendo texto para clasificación (qwen3-vl)")
+        logger.info("[procesar] Paso 2: OCR Surya")
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(pdf_bytes)
             ruta_temporal = tmp.name
 
         try:
-            imagenes_doc = await asyncio.to_thread(pdf_a_imagenes, ruta_temporal)
+            textos_raw = await asyncio.to_thread(ocr_pdf, ruta_temporal)
         finally:
             if os.path.exists(ruta_temporal):
                 os.unlink(ruta_temporal)
 
-        textos_por_pagina = await asyncio.to_thread(ocr_paginas_vl, imagenes_doc)
+        textos_por_pagina = parsear_textos_ocr(textos_raw)
 
         logger.info(f"[procesar] Paso 3: Clasificando {len(textos_por_pagina)} páginas")
         clasificaciones = clasificar_paginas(textos_por_pagina)

@@ -35,3 +35,7 @@ async def convertir_a_pdf(contenido: bytes, nombre: str) -> bytes:
     return contenido
 
 
+def parsear_textos_ocr(textos_raw: str) -> dict[int, str]:
+    """Convierte el string de OCR (separado por '--- NUEVA PAGINA ---') a dict {num_pagina: texto}."""
+    paginas = textos_raw.split("\n\n--- NUEVA PAGINA ---\n\n")
+    return {i + 1: texto for i, texto in enumerate(paginas)}
