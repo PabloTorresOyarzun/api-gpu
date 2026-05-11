@@ -10,7 +10,7 @@ from litestar.middleware import DefineMiddleware
 
 from .services.pipeline.extractor import cargar_modelos
 from .api.middleware import FiltroIPMiddleware
-from .api.endpoints import procesar_endpoint, health
+from .api.endpoints import procesar_endpoint, procesar_endpoint_vl, health
 
 
 async def on_startup() -> None:
@@ -20,7 +20,7 @@ async def on_startup() -> None:
 
 
 app = Litestar(
-    route_handlers=[procesar_endpoint, health],
+    route_handlers=[procesar_endpoint, procesar_endpoint_vl, health],
     middleware=[DefineMiddleware(FiltroIPMiddleware)],
     on_startup=[on_startup],
     openapi_config=OpenAPIConfig(
@@ -28,8 +28,10 @@ app = Litestar(
         version="2.0.0",
         description=(
             "API para procesamiento de documentos de comercio exterior.\n\n"
-            "**Pipeline completo** (`/procesar`): Conversión → Sanitización → "
-            "OCR (Surya GPU) → Clasificación → Extracción (LLM)."
+            "**Pipeline OCR** (`/procesar`): Conversión → Sanitización → "
+            "OCR (Surya GPU) → Clasificación → Extracción (LLM texto).\n\n"
+            "**Pipeline VL** (`/procesar-vl`): Conversión → Sanitización → "
+            "Imágenes → Clasificación + Extracción (Qwen3-VL multimodal)."
         ),
         render_plugins=[SwaggerRenderPlugin()],
         path="/docs",

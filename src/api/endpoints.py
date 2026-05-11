@@ -11,6 +11,7 @@ from litestar.datastructures import UploadFile
 from litestar.exceptions import HTTPException
 
 from ..services.pipeline.extractor import procesar_pdf, ocr_pdf, TipoDocumentoNoSoportado
+from ..services.pipeline.extractor_vl import procesar_pdf_vl, pdf_a_imagenes, ocr_paginas_vl
 from ..services.pipeline.sanitizer import sanitizar_pdf
 from ..services.pipeline.classifier import clasificar_paginas, segmentar_pdf
 
@@ -111,4 +112,92 @@ async def procesar_endpoint(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.exception(f"Error en pipeline completo para {nombre}")
+        raise HTTPException(status_code=500, detail=f"Error procesando documento: {str(e)}")
+
+
+@post("/procesar-vl", tags=["Tratamiento"])
+async def procesar_endpoint_vl(
+    request: Request,
+    data: Annotated[UploadFile, Body(media_type=RequestEncodingType.MULTI_PART)],
+) -> dict:
+    """
+    Pipeline alternativo basado en Qwen3-VL (visión multimodal).
+    El modelo ve las imágenes del documento directamente — sin OCR intermedio.
+
+    1. Convierte a PDF (si es Excel o imagen)
+    2. Sanitiza (repara, analiza calidad, corrige rotación)
+    3. Convierte páginas a imágenes y extrae texto por página vía qwen3-vl
+    4. Clasifica páginas por tipo de documento
+    5. Segmenta en documentos individuales
+    6. Extrae datos estructurados pasando las imágenes a qwen3-vl
+
+    Acepta: PDF, Excel (.xlsx/.xls/.xlsm), imágenes (.jpg/.png/.tiff/etc.)
+    """
+    validar_api_key(request)
+
+    contenido = await data.read()
+    nombre = data.filename or "documento"
+
+    try:
+        logger.info(f"[procesar-vl] Paso 0: Convirtiendo {nombre}")
+        pdf_bytes = await convertir_a_pdf(contenido, nombre)
+
+        logger.info(f"[procesar-vl] Paso 1: Sanitizando ({len(pdf_bytes)} bytes)")
+        pdf_bytes, alertas = await asyncio.to_thread(sanitizar_pdf, pdf_bytes)
+
+        logger.info("[procesar-vl] Paso 2: Extrayendo texto para clasificación (qwen3-vl)")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(pdf_bytes)
+            ruta_temporal = tmp.name
+
+        try:
+            imagenes_doc = await asyncio.to_thread(pdf_a_imagenes, ruta_temporal)
+        finally:
+            if os.path.exists(ruta_temporal):
+                os.unlink(ruta_temporal)
+
+        textos_por_pagina = await asyncio.to_thread(ocr_paginas_vl, imagenes_doc)
+
+        logger.info(f"[procesar-vl] Paso 3: Clasificando {len(textos_por_pagina)} páginas")
+        clasificaciones = clasificar_paginas(textos_por_pagina)
+        documentos = await asyncio.to_thread(segmentar_pdf, pdf_bytes, clasificaciones)
+
+        logger.info(f"[procesar-vl] Paso 4: Extrayendo datos de {len(documentos)} documento(s)")
+        resultados = []
+        for doc in documentos:
+            doc_resultado = {
+                "tipo": doc["tipo"],
+                "paginas": doc["paginas"],
+            }
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                tmp.write(doc["pdf_bytes"])
+                ruta_doc = tmp.name
+            try:
+                datos = await asyncio.to_thread(procesar_pdf_vl, ruta_doc, doc["tipo"])
+                doc_resultado["datos_extraidos"] = datos
+            except TipoDocumentoNoSoportado:
+                doc_resultado["datos_extraidos"] = None
+            except Exception as e:
+                logger.warning(f"Error VL extrayendo segmento {doc['tipo']} págs {doc['paginas']}: {e}")
+                doc_resultado["datos_extraidos"] = None
+                doc_resultado["error_extraccion"] = str(e)
+            finally:
+                if os.path.exists(ruta_doc):
+                    os.unlink(ruta_doc)
+
+            resultados.append(doc_resultado)
+
+        return {
+            "filename": nombre,
+            "total_paginas": len(textos_por_pagina),
+            "clasificaciones": clasificaciones,
+            "documentos": resultados,
+            "alertas_sanitizacion": alertas,
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Error en pipeline VL para {nombre}")
         raise HTTPException(status_code=500, detail=f"Error procesando documento: {str(e)}")
