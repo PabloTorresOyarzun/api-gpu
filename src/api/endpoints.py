@@ -12,6 +12,7 @@ from litestar.exceptions import HTTPException
 
 from ..services.pipeline.extractor import procesar_pdf, ocr_pdf, TipoDocumentoNoSoportado
 from ..services.pipeline.extractor_vl import procesar_pdf_vl, pdf_a_imagenes, ocr_paginas_vl, clasificar_paginas_vl
+from ..services.pipeline.extractor_qianfan import procesar_pdf_qianfan, ocr_pdf_qianfan
 from ..services.pipeline.sanitizer import sanitizar_pdf
 from ..services.pipeline.classifier import clasificar_paginas, segmentar_pdf
 
@@ -198,4 +199,95 @@ async def procesar_endpoint_vl(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.exception(f"Error en pipeline VL para {nombre}")
+        raise HTTPException(status_code=500, detail=f"Error procesando documento: {str(e)}")
+
+
+@post("/procesar-qianfan", tags=["Tratamiento"])
+async def procesar_endpoint_qianfan(
+    request: Request,
+    data: Annotated[UploadFile, Body(media_type=RequestEncodingType.MULTI_PART)],
+) -> dict:
+    """
+    Pipeline híbrido: Qianfan-OCR (visión) transcribe + Qwen3:14b extrae JSON.
+
+    Mismo flujo que /procesar pero reemplaza Surya por Qianfan-OCR. Qianfan
+    es un modelo VL especializado en OCR de documentos — lee mejor números
+    en tablas y mantiene el layout.
+
+    1. Convierte a PDF (si es Excel o imagen)
+    2. Sanitiza (repara, analiza calidad, corrige rotación)
+    3. OCR con Qianfan-OCR (vía Ollama)
+    4. Clasifica páginas por tipo de documento (texto)
+    5. Segmenta en documentos individuales
+    6. Extrae datos estructurados con Qwen3:14b
+
+    Acepta: PDF, Excel (.xlsx/.xls/.xlsm), imágenes (.jpg/.png/.tiff/etc.)
+    """
+    validar_api_key(request)
+
+    contenido = await data.read()
+    nombre = data.filename or "documento"
+
+    try:
+        logger.info(f"[procesar-qianfan] Paso 0: Convirtiendo {nombre}")
+        pdf_bytes = await convertir_a_pdf(contenido, nombre)
+
+        logger.info(f"[procesar-qianfan] Paso 1: Sanitizando ({len(pdf_bytes)} bytes)")
+        pdf_bytes, alertas = await asyncio.to_thread(sanitizar_pdf, pdf_bytes)
+
+        logger.info("[procesar-qianfan] Paso 2: OCR Qianfan")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(pdf_bytes)
+            ruta_temporal = tmp.name
+
+        try:
+            textos_raw = await asyncio.to_thread(ocr_pdf_qianfan, ruta_temporal)
+        finally:
+            if os.path.exists(ruta_temporal):
+                os.unlink(ruta_temporal)
+
+        textos_por_pagina = parsear_textos_ocr(textos_raw)
+
+        logger.info(f"[procesar-qianfan] Paso 3: Clasificando {len(textos_por_pagina)} páginas")
+        clasificaciones = clasificar_paginas(textos_por_pagina)
+        documentos = await asyncio.to_thread(segmentar_pdf, pdf_bytes, clasificaciones)
+
+        logger.info(f"[procesar-qianfan] Paso 4: Extrayendo datos de {len(documentos)} documento(s)")
+        resultados = []
+        for doc in documentos:
+            doc_resultado = {
+                "tipo": doc["tipo"],
+                "paginas": doc["paginas"],
+            }
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                tmp.write(doc["pdf_bytes"])
+                ruta_doc = tmp.name
+            try:
+                datos = await asyncio.to_thread(procesar_pdf_qianfan, ruta_doc, doc["tipo"])
+                doc_resultado["datos_extraidos"] = datos
+            except TipoDocumentoNoSoportado:
+                doc_resultado["datos_extraidos"] = None
+            except Exception as e:
+                logger.warning(f"Error Qianfan extrayendo segmento {doc['tipo']} págs {doc['paginas']}: {e}")
+                doc_resultado["datos_extraidos"] = None
+                doc_resultado["error_extraccion"] = str(e)
+            finally:
+                if os.path.exists(ruta_doc):
+                    os.unlink(ruta_doc)
+
+            resultados.append(doc_resultado)
+
+        return {
+            "filename": nombre,
+            "total_paginas": len(textos_por_pagina),
+            "clasificaciones": clasificaciones,
+            "documentos": resultados,
+            "alertas_sanitizacion": alertas,
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Error en pipeline Qianfan para {nombre}")
         raise HTTPException(status_code=500, detail=f"Error procesando documento: {str(e)}")
