@@ -15,7 +15,7 @@ import requests
 from PIL import Image
 from pdf2image import convert_from_path, pdfinfo_from_path
 
-from .extractor import _PROMPT_MAP, TipoDocumentoNoSoportado
+from .extractor import _PROMPT_MAP, TipoDocumentoNoSoportado, _preprocess_image
 
 logger = logging.getLogger(__name__)
 
@@ -30,13 +30,19 @@ def _imagen_a_base64(pil_image: Image.Image) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
-def pdf_a_imagenes(ruta_pdf: str, dpi: int = 500) -> list:
-    """Convierte todas las páginas del PDF a imágenes PIL."""
+def pdf_a_imagenes(ruta_pdf: str, dpi: int = 600) -> list:
+    """
+    Convierte todas las páginas del PDF a imágenes PIL y aplica preprocessing
+    (denoising + CLAHE). Esto realza el contraste local de los caracteres pequeños
+    (como el '1,' antes de los miles) para que sobrevivan el downsample interno
+    que hace el modelo VL antes de procesar la imagen.
+    """
     info = pdfinfo_from_path(ruta_pdf)
     total = info["Pages"]
     imagenes = []
     for n in range(1, total + 1):
         imgs = convert_from_path(ruta_pdf, dpi=dpi, first_page=n, last_page=n)
+        imgs = [_preprocess_image(img) for img in imgs]
         imagenes.extend(imgs)
     return imagenes
 
