@@ -9,7 +9,7 @@ litestar[standard]
 python-multipart
 # Doc Toolkit (modulo_tratamiento)
 PyMuPDF>=1.24.0
-opencv-python>=4.10.0
+opencv-python-headless==4.11.0.86
 pytesseract>=0.3.10
 numpy>=1.26.0
 Pillow>=10.2.0,<11.0.0

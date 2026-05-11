@@ -9,6 +9,7 @@ from PIL import Image
 from pdf2image import convert_from_path, pdfinfo_from_path
 from surya.recognition import RecognitionPredictor
 from surya.detection import DetectionPredictor
+from surya.foundation import FoundationPredictor
 
 from ..prompts import transporte, factura, lista_embalaje, certificado_origen
 
@@ -36,7 +37,8 @@ def cargar_modelos():
     global _recognition_predictor, _detection_predictor
     if _recognition_predictor is None:
         print("Cargando modelos de Surya en GPU...")
-        _recognition_predictor = RecognitionPredictor()
+        _foundation_predictor = FoundationPredictor()
+        _recognition_predictor = RecognitionPredictor(_foundation_predictor)
         _detection_predictor = DetectionPredictor()
         print("Modelos cargados.")
 
@@ -149,8 +151,7 @@ def ocr_pdf(ruta_pdf: str) -> str:
         # Preprocesamiento (denoising + contraste adaptativo).
         imagenes = [_preprocess_image(img) for img in imagenes]
 
-        langs = [["es", "en"]] * len(imagenes)
-        predicciones = _recognition_predictor(imagenes, langs, det_predictor=_detection_predictor)
+        predicciones = _recognition_predictor(imagenes, det_predictor=_detection_predictor)
         for pagina in predicciones:
             texto_pagina = _reconstruct_text(pagina.text_lines)
             texto_upper = texto_pagina.upper()
