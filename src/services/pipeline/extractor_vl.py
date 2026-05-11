@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 URL_OLLAMA = os.getenv("URL_OLLAMA")
 MODELO_VL = os.getenv("MODELO_VL", "qwen3-vl:8b")
+TIMEOUT_VL_EXTRACCION = int(os.getenv("TIMEOUT_VL_EXTRACCION", "1800"))
 
 
 def _imagen_a_base64(pil_image: Image.Image) -> str:
@@ -186,7 +187,7 @@ def extraer_documento_vl(imagenes: list, tipo_documento: str) -> dict:
                 "seed": 42,
             },
         },
-        timeout=1200,
+        timeout=TIMEOUT_VL_EXTRACCION,
     )
 
     if respuesta.status_code != 200:
