@@ -186,7 +186,7 @@ def extraer_documento_vl(imagenes: list, tipo_documento: str) -> dict:
                 "seed": 42,
             },
         },
-        timeout=600,
+        timeout=1200,
     )
 
     if respuesta.status_code != 200:
