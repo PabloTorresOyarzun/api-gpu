@@ -11,7 +11,7 @@ from litestar.datastructures import UploadFile
 from litestar.exceptions import HTTPException
 
 from ..services.pipeline.extractor import procesar_pdf, ocr_pdf, TipoDocumentoNoSoportado
-from ..services.pipeline.extractor_vl import procesar_pdf_vl, pdf_a_imagenes, ocr_paginas_vl
+from ..services.pipeline.extractor_vl import procesar_pdf_vl, pdf_a_imagenes, ocr_paginas_vl, clasificar_paginas_vl
 from ..services.pipeline.sanitizer import sanitizar_pdf
 from ..services.pipeline.classifier import clasificar_paginas, segmentar_pdf
 
@@ -145,7 +145,7 @@ async def procesar_endpoint_vl(
         logger.info(f"[procesar-vl] Paso 1: Sanitizando ({len(pdf_bytes)} bytes)")
         pdf_bytes, alertas = await asyncio.to_thread(sanitizar_pdf, pdf_bytes)
 
-        logger.info("[procesar-vl] Paso 2: Extrayendo texto para clasificación (qwen3-vl)")
+        logger.info("[procesar-vl] Paso 2: Convirtiendo páginas a imágenes")
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(pdf_bytes)
             ruta_temporal = tmp.name
@@ -156,10 +156,8 @@ async def procesar_endpoint_vl(
             if os.path.exists(ruta_temporal):
                 os.unlink(ruta_temporal)
 
-        textos_por_pagina = await asyncio.to_thread(ocr_paginas_vl, imagenes_doc)
-
-        logger.info(f"[procesar-vl] Paso 3: Clasificando {len(textos_por_pagina)} páginas")
-        clasificaciones = clasificar_paginas(textos_por_pagina)
+        logger.info(f"[procesar-vl] Paso 3: Clasificando {len(imagenes_doc)} páginas por visión")
+        clasificaciones = await asyncio.to_thread(clasificar_paginas_vl, imagenes_doc)
         documentos = await asyncio.to_thread(segmentar_pdf, pdf_bytes, clasificaciones)
 
         logger.info(f"[procesar-vl] Paso 4: Extrayendo datos de {len(documentos)} documento(s)")
@@ -190,7 +188,7 @@ async def procesar_endpoint_vl(
 
         return {
             "filename": nombre,
-            "total_paginas": len(textos_por_pagina),
+            "total_paginas": len(imagenes_doc),
             "clasificaciones": clasificaciones,
             "documentos": resultados,
             "alertas_sanitizacion": alertas,

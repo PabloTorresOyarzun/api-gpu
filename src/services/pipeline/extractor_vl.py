@@ -40,6 +40,70 @@ def pdf_a_imagenes(ruta_pdf: str, dpi: int = 200) -> list:
     return imagenes
 
 
+_TIPOS_VALIDOS_VL = {
+    "FACTURA_COMERCIAL",
+    "DOCUMENTO_TRANSPORTE",
+    "LISTA_EMBALAJE",
+    "CERTIFICADO_ORIGEN",
+    "UNKNOWN_DOCUMENT",
+}
+
+_PROMPT_CLASIFICACION_VL = (
+    "Look at this document image and identify its type. "
+    "Reply with EXACTLY one of these labels, nothing else:\n"
+    "- FACTURA_COMERCIAL (commercial invoice, proforma invoice, tax invoice)\n"
+    "- DOCUMENTO_TRANSPORTE (bill of lading, airway bill, sea waybill, transport document)\n"
+    "- LISTA_EMBALAJE (packing list, shipping list, delivery note)\n"
+    "- CERTIFICADO_ORIGEN (certificate of origin)\n"
+    "- UNKNOWN_DOCUMENT (terms & conditions, any other document type)\n"
+    "Your answer must be exactly one of those five labels."
+)
+
+
+def clasificar_paginas_vl(imagenes: list) -> list:
+    """
+    Clasificación directa por visión: envía cada imagen al modelo y le pregunta
+    qué tipo de documento es. Evita el ciclo OCR→keywords que falla cuando
+    el texto generado no coincide exactamente con los patrones del clasificador.
+    keep_alive=300 mantiene el modelo cargado entre páginas.
+    """
+    clasificaciones = []
+    for i, img in enumerate(imagenes, 1):
+        img_b64 = _imagen_a_base64(img)
+        respuesta = requests.post(
+            URL_OLLAMA,
+            json={
+                "model": MODELO_VL,
+                "prompt": _PROMPT_CLASIFICACION_VL,
+                "images": [img_b64],
+                "stream": False,
+                "think": False,
+                "keep_alive": 300,
+                "options": {
+                    "num_ctx": 4096,
+                    "num_predict": 32,
+                    "temperature": 0,
+                },
+            },
+            timeout=120,
+        )
+
+        tipo = "UNKNOWN_DOCUMENT"
+        if respuesta.status_code == 200:
+            respuesta_texto = respuesta.json().get("response", "").strip().upper()
+            logger.info(f"Clasificación VL página {i}: {respuesta_texto!r}")
+            for t in _TIPOS_VALIDOS_VL:
+                if t in respuesta_texto:
+                    tipo = t
+                    break
+        else:
+            logger.warning(f"Clasificación VL error página {i}: {respuesta.status_code}")
+
+        clasificaciones.append({"pagina": i, "tipo": tipo})
+
+    return clasificaciones
+
+
 def ocr_paginas_vl(imagenes: list) -> dict:
     """
     Extrae texto por página usando qwen3-vl (para alimentar al clasificador).
