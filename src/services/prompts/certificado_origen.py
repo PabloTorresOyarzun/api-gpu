@@ -138,7 +138,10 @@ issuing_body es la organización que emite (cámara de comercio, ministerio, aut
 9. NORMALIZACIÓN
 - Direcciones en una sola línea con comas, sin saltos.
 - Pesos y montos como números (sin separadores de miles, punto decimal).
+- PROHIBIDO CALCULAR — TRANSCRIPCIÓN LITERAL: todos los valores numéricos (quantity, pesos, fob_value, totales) son datos IMPRESOS. Léelos tal cual aparecen en su celda. Nunca sumes líneas para inferir totales, nunca multipliques ni dividas para derivar un valor. Si no está impreso, devuelve null.
+- Lee cada número COMPLETO, dígito por dígito, incluyendo todos los dígitos antes y después del separador. Captura TODOS los dígitos a ambos lados de cualquier coma o punto.
 - SEPARADORES EN NÚMEROS — distinguir miles de decimal por posición: si el número tiene SOLO coma (sin punto) → la coma es miles: "1,244" → 1244, "14,700" → 14700. Si tiene coma Y punto → el último es decimal: "1,244.50" → 1244.50; formato europeo "8.994,97" → 8994.97. Si tiene SOLO punto → decimal: "1244.50" → 1244.50. NUNCA devuelvas "244" donde el documento dice "1,244".
+- CHEQUEO DE COHERENCIA: si los números transcritos no cuadran entre sí (ej. suma de fob_value por línea ≠ total impreso), no ajustes con tu cálculo: re-lee el valor sospechoso de la imagen.
 - Fechas en ISO YYYY-MM-DD.
 - Valores con solo "-", "—", "N/A", "NA", "" → null.
 - Etiquetas sin valor → null. NUNCA copies etiquetas.

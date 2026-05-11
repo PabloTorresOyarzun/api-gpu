@@ -124,7 +124,10 @@ Datos como color, talla, fabric, modelo, batch, lot, expiry, voltage, etc. → i
 
 6. NORMALIZACIÓN
 - Pesos y volúmenes como números preservando decimales del documento (no agregues precisión que no esté).
+- PROHIBIDO CALCULAR — TRANSCRIPCIÓN LITERAL: todos los valores numéricos (quantity, pesos, volúmenes, dimensiones, package_count, totales) son datos IMPRESOS en el documento. Léelos tal cual aparecen en su celda. Nunca sumes líneas para inferir un total, nunca multipliques ni divides para derivar un valor, nunca completes campos ausentes con operaciones. Si no está impreso, devuelve null.
+- Lee cada número COMPLETO, dígito por dígito, incluyendo todos los dígitos antes y después del separador. Captura TODOS los dígitos a ambos lados de cualquier coma o punto.
 - SEPARADORES EN NÚMEROS — distinguir miles de decimal por posición: si el número tiene SOLO coma (sin punto) → la coma es miles: "1,244" → 1244, "14,700" → 14700. Si tiene coma Y punto → el último es decimal: "1,244.50" → 1244.50; formato europeo "8.994,97" → 8994.97. Si tiene SOLO punto → decimal: "1244.50" → 1244.50. NUNCA devuelvas "244" donde el documento dice "1,244".
+- CHEQUEO DE COHERENCIA: si los números transcritos no cuadran entre sí (ej. suma de pesos por línea ≠ total impreso), no ajustes con tu cálculo: re-lee el valor sospechoso de la imagen.
 - Direcciones en una sola línea, separadas por comas.
 - Fechas en ISO YYYY-MM-DD.
 - Valores que solo contengan "-", "—", "N/A", "NA", "" → null.

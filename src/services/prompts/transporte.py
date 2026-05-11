@@ -124,9 +124,12 @@ container_no y seal_no son códigos distintos. El contenedor suele tener 4 letra
 Cuando veas formato "CODIGO1/CODIGO2/40'HQ/N PACKAGES/PESO KGS/VOLUMEN CBM", el primer código es container_no, el segundo es seal_no. NO los concatenes.
 La estructura puede aparecer como tabla con columnas "Cntr No / Seal No. / Sz/Ty / Qty / Pkg Type / Weight". En ese caso: container_no=Cntr No, seal_no=Seal No., type=Sz/Ty, packages_count=Qty, packages_type=Pkg Type, gross_weight_kg=Weight. NO uses los totales globales para campos individuales.
 
-4. PESOS Y VOLÚMENES
+4. PESOS Y VOLÚMENES — TRANSCRIPCIÓN LITERAL
 Como números preservando los decimales tal como aparecen en el documento. Ejemplo: 14700.000 y 31.300, no 14700 ni "14,700 KGS".
+PROHIBIDO CALCULAR: todos los valores numéricos (pesos, volúmenes, cantidades, montos de flete) son datos IMPRESOS. Léelos de su celda correspondiente. Nunca sumes pesos individuales para inferir un total, nunca dividas, nunca derives un valor de otro. Si no está impreso, devuelve null.
+Lee cada número COMPLETO, dígito por dígito, incluyendo todos los dígitos antes y después del separador. Si el documento muestra un número con separador (coma o punto), captura TODOS los dígitos a ambos lados.
 SEPARADORES EN NÚMEROS — distinguir miles de decimal por posición: si el número tiene SOLO coma (sin punto) → la coma es miles: "1,244" → 1244, "14,700" → 14700. Si tiene coma Y punto → el último es decimal: "14,700.500" → 14700.500; formato europeo "14.700,500" → 14700.500. Si tiene SOLO punto → decimal: "14700.500" → 14700.500. NUNCA devuelvas "700" donde el documento dice "14,700".
+CHEQUEO DE COHERENCIA: si después de transcribir detectas que los números no cuadran entre sí (ej. suma de pesos de contenedores ≠ peso total impreso), no ajustes con tu cálculo: re-lee el valor sospechoso de la imagen.
 
 5. FECHAS
 Siempre en ISO YYYY-MM-DD. "12-Oct-2024" se convierte en "2024-10-12".
