@@ -137,6 +137,7 @@ unit_of_measure debe medir CUÁNTOS o CUÁNTO se vende del producto. Valores com
 
 2. SELLER vs SHIPPER vs MANUFACTURER
 seller es quien EMITE la factura y cobra. Aparece en encabezado/firma. Manufacturer (fabricante) puede ser distinto y va en additional_attributes del item correspondiente si aparece. shipper (en el BL) puede o no coincidir con seller — no lo confundas.
+IDENTIFICADORES FISCALES POR PAÍS: el formato de un tax_id revela su país. Si el formato NO coincide con el país de la entidad, no lo asignes a esa entidad — pertenece a otra del documento. Formatos clave: RUT chileno (dígitos con puntos y guión, termina en letra o dígito verificador, ej: "89.010.200-K", "12.345.678-9"), USCC chino (18 caracteres alfanuméricos), CNPJ brasileño (XX.XXX.XXX/XXXX-XX), EIN americano (XX-XXXXXXX), CUIT argentino (XX-XXXXXXXX-X). Ejemplo: seller japonés → "89.010.200-K" es RUT chileno, pertenece al buyer chileno → seller.tax_id: null, buyer.tax_id: "89.010.200-K".
 TELÉFONOS Y EMAILS POR CÓDIGO DE PAÍS: el código del teléfono debe ser consistente con el país de la entidad. Ejemplos de códigos: China +86, Chile +56, EE.UU. +1, Alemania +49, Brasil +55, India +91, Italia +39, España +34, México +52, Vietnam +84, Turquía +90. Si en el pie de página o en una sección genérica aparece un teléfono con código de país DISTINTO al país del seller, ese teléfono NO es del seller (probablemente es del buyer, agente local o representante). En ese caso devuelve seller.phone: null y, si corresponde claramente al buyer (mismo código de país que el buyer), úsalo para buyer.phone. Lo mismo aplica para emails con dominios geográficos (.cn, .cl, .de, etc.) cuando hay desajuste evidente.
 
 3. BUYER vs SHIP_TO vs CONSIGNEE
@@ -160,7 +161,8 @@ Si subtotal == total_amount y no hay impuestos, descuentos ni cargos, está bien
 "EXW Beijing factory" → incoterm: "EXW", incoterm_location: "BEIJING".
 incoterm_location es siempre un lugar geográfico (puerto, aeropuerto, ciudad, terminal).
 
-7. REFERENCIAS (PO, contrato, cotización)
+7. REFERENCIAS (PO, contrato, cotización, Ref No)
+Campos del documento como "Ref No.", "Ref:", "Reference", "Your Ref.", "Our Ref.", "Mark No.", que no sean el número de factura ni el PO ni el contrato → capturar en references.customer_reference si es claramente la referencia del cliente/comprador, o en references.other si su rol no está claro. En facturas asiáticas, "Ref No" suele ser la referencia de despacho o de pedido del comprador y debe capturarse siempre.
 Una factura puede tener un PO global O POs distintos por línea:
 - Si TODAS las líneas tienen el MISMO PO → references.purchase_order = ese número, items[].purchase_order = null en todas.
 - Si las líneas tienen POs DISTINTOS entre sí → references.purchase_order = null, items[].purchase_order = el PO específico de cada línea.
@@ -201,6 +203,7 @@ Si la factura referencia el embarque (vessel, BL/AWB, ports, container numbers, 
 13. NORMALIZACIÓN DE VALORES
 - Direcciones en una sola línea, separando con comas, sin saltos de línea.
 - Montos como NÚMEROS: sin símbolo de moneda, sin separador de miles, punto decimal. "USD 8,994.97" → 8994.97.
+- SEPARADORES EN NÚMEROS — distinguir miles de decimal por posición: si el número tiene SOLO coma (sin punto) → la coma es miles: "1,244" → 1244, "12,440" → 12440, "JPY1,244.-" → 1244. Si tiene coma Y punto → el último separador es decimal: "1,244.50" → 1244.50; formato europeo "8.994,97" (punto primero, coma última) → 8994.97. Si tiene SOLO punto → decimal: "1244.50" → 1244.50. NUNCA devuelvas "244" donde el documento dice "1,244".
 - Fechas en ISO YYYY-MM-DD. "15-Jul-24" → "2024-07-15", "15/07/2024" → "2024-07-15".
 - Pesos y volúmenes como números preservando los decimales del documento.
 - Valores que solo contengan "-", "—", "N/A", "NA", "null", "" → null.

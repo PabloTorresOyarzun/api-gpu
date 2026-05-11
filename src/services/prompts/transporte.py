@@ -126,6 +126,7 @@ La estructura puede aparecer como tabla con columnas "Cntr No / Seal No. / Sz/Ty
 
 4. PESOS Y VOLÚMENES
 Como números preservando los decimales tal como aparecen en el documento. Ejemplo: 14700.000 y 31.300, no 14700 ni "14,700 KGS".
+SEPARADORES EN NÚMEROS — distinguir miles de decimal por posición: si el número tiene SOLO coma (sin punto) → la coma es miles: "1,244" → 1244, "14,700" → 14700. Si tiene coma Y punto → el último es decimal: "14,700.500" → 14700.500; formato europeo "14.700,500" → 14700.500. Si tiene SOLO punto → decimal: "14700.500" → 14700.500. NUNCA devuelvas "700" donde el documento dice "14,700".
 
 5. FECHAS
 Siempre en ISO YYYY-MM-DD. "12-Oct-2024" se convierte en "2024-10-12".
@@ -152,6 +153,7 @@ shipper: el exportador (quien embarca la carga).
 carrier: la naviera/aerolínea/transportista que opera el transporte y emite el BL.
 delivery_agent: el agente físico que entrega en destino (suele aparecer en bloque "Delivery Agent" o "Notify in destination").
 NO los confundas — son tres roles distintos.
+IDENTIFICADORES FISCALES POR PAÍS: asigna el tax_id a la entidad cuyo país coincide con el formato del identificador. RUT chileno (dígitos con puntos y guión terminando en letra/dígito, ej: "89.010.200-K") → entidad chilena. USCC chino (18 car. alfanuméricos) → entidad china. CNPJ brasileño (XX.XXX.XXX/XXXX-XX) → entidad brasileña. Si el formato no coincide con el país de una entidad, no lo asignes — busca la entidad correcta en el documento.
 
 12. NORMALIZACIÓN DE OUTLIERS POR PATRÓN OCR
 Cuando un campo aparece repetido en múltiples contenedores/filas y la MAYORÍA sigue un patrón claro pero unas pocas son outliers que difieren por solo 1-2 caracteres, asume que el outlier es un error de OCR y normaliza al patrón dominante.

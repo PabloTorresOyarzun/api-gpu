@@ -117,12 +117,14 @@ gross_weight_kg incluye el embalaje. net_weight_kg es solo la mercancía. NO los
 
 4. SHIPPER vs CONSIGNEE vs SHIP_TO
 shipper: quien EMBARCA (exportador). consignee: titular fiscal del embarque (quien aparece en el BL como destinatario). ship_to: dirección física de entrega si difiere de consignee.
+IDENTIFICADORES FISCALES POR PAÍS: el formato del tax_id revela su país. Si el formato no coincide con el país de la entidad, no lo asignes a esa entidad. RUT chileno (dígitos con puntos y guión terminando en letra/dígito, ej: "89.010.200-K") → entidad chilena. USCC chino (18 car. alfanuméricos) → entidad china. CNPJ brasileño (XX.XXX.XXX/XXXX-XX) → entidad brasileña.
 
 5. ATRIBUTOS NO ESTÁNDAR
 Datos como color, talla, fabric, modelo, batch, lot, expiry, voltage, etc. → items[].additional_attributes como pares clave-valor (snake_case). No los descartes.
 
 6. NORMALIZACIÓN
 - Pesos y volúmenes como números preservando decimales del documento (no agregues precisión que no esté).
+- SEPARADORES EN NÚMEROS — distinguir miles de decimal por posición: si el número tiene SOLO coma (sin punto) → la coma es miles: "1,244" → 1244, "14,700" → 14700. Si tiene coma Y punto → el último es decimal: "1,244.50" → 1244.50; formato europeo "8.994,97" → 8994.97. Si tiene SOLO punto → decimal: "1244.50" → 1244.50. NUNCA devuelvas "244" donde el documento dice "1,244".
 - Direcciones en una sola línea, separadas por comas.
 - Fechas en ISO YYYY-MM-DD.
 - Valores que solo contengan "-", "—", "N/A", "NA", "" → null.

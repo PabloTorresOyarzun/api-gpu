@@ -107,6 +107,7 @@ REGLAS DE DESAMBIGUACIÓN:
 exporter: quien embarca y vende al exterior (puede ser un trader).
 producer: quien fabricó la mercancía. Si el certificado dice explícitamente "Same as exporter" o no menciona productor distinto → producer.is_same_as_exporter: true y los demás campos en null.
 importer: destinatario en el país importador.
+IDENTIFICADORES FISCALES POR PAÍS: el formato del tax_id revela su país. Si el formato no coincide con el país de la entidad, no lo asignes a esa entidad. RUT chileno (dígitos con puntos y guión terminando en letra/dígito, ej: "89.010.200-K") → entidad chilena. USCC chino (18 car. alfanuméricos) → entidad china. CNPJ brasileño (XX.XXX.XXX/XXXX-XX) → entidad brasileña. EIN americano (XX-XXXXXXX) → entidad americana.
 
 2. CRITERIO DE ORIGEN
 origin_criterion es un CÓDIGO definido por el acuerdo comercial:
@@ -137,6 +138,7 @@ issuing_body es la organización que emite (cámara de comercio, ministerio, aut
 9. NORMALIZACIÓN
 - Direcciones en una sola línea con comas, sin saltos.
 - Pesos y montos como números (sin separadores de miles, punto decimal).
+- SEPARADORES EN NÚMEROS — distinguir miles de decimal por posición: si el número tiene SOLO coma (sin punto) → la coma es miles: "1,244" → 1244, "14,700" → 14700. Si tiene coma Y punto → el último es decimal: "1,244.50" → 1244.50; formato europeo "8.994,97" → 8994.97. Si tiene SOLO punto → decimal: "1244.50" → 1244.50. NUNCA devuelvas "244" donde el documento dice "1,244".
 - Fechas en ISO YYYY-MM-DD.
 - Valores con solo "-", "—", "N/A", "NA", "" → null.
 - Etiquetas sin valor → null. NUNCA copies etiquetas.
