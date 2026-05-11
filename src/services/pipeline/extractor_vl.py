@@ -175,7 +175,6 @@ def extraer_documento_vl(imagenes: list, tipo_documento: str) -> dict:
             "images": imagenes_b64,
             "format": "json",
             "stream": False,
-            "think": False,
             "keep_alive": 0,
             "options": {
                 "num_ctx": 24576,
@@ -193,7 +192,9 @@ def extraer_documento_vl(imagenes: list, tipo_documento: str) -> dict:
     if respuesta.status_code != 200:
         raise RuntimeError(f"Error de Ollama: {respuesta.status_code} - {respuesta.text}")
 
-    res_json = respuesta.json().get("response", "")
+    cuerpo = respuesta.json()
+    res_json = cuerpo.get("response", "")
+    logger.info(f"Extracción VL done_reason={cuerpo.get('done_reason')!r} tokens={cuerpo.get('eval_count')} respuesta_len={len(res_json)}")
     match = re.search(r"\{.*\}", res_json, re.DOTALL)
     if not match:
         raise ValueError(f"La IA no devolvió un JSON válido. Respuesta: {res_json[:500]}")
