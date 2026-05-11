@@ -20,7 +20,7 @@ from .extractor import _PROMPT_MAP, TipoDocumentoNoSoportado
 logger = logging.getLogger(__name__)
 
 URL_OLLAMA = os.getenv("URL_OLLAMA")
-MODELO_VL = os.getenv("MODELO_VL", "qwen3-vl:8b")
+MODELO_VL = os.getenv("MODELO_VL", "qwen3-vl:30b")
 
 
 def _imagen_a_base64(pil_image: Image.Image) -> str:
@@ -29,7 +29,7 @@ def _imagen_a_base64(pil_image: Image.Image) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
-def pdf_a_imagenes(ruta_pdf: str, dpi: int = 200) -> list:
+def pdf_a_imagenes(ruta_pdf: str, dpi: int = 500) -> list:
     """Convierte todas las páginas del PDF a imágenes PIL."""
     info = pdfinfo_from_path(ruta_pdf)
     total = info["Pages"]
