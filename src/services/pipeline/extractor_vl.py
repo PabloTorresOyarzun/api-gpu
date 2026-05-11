@@ -81,7 +81,7 @@ def clasificar_paginas_vl(imagenes: list) -> list:
                 "keep_alive": 300,
                 "options": {
                     "num_ctx": 4096,
-                    "num_predict": 32,
+                    "num_predict": 512,
                     "temperature": 0,
                 },
             },
@@ -90,8 +90,9 @@ def clasificar_paginas_vl(imagenes: list) -> list:
 
         tipo = "UNKNOWN_DOCUMENT"
         if respuesta.status_code == 200:
-            respuesta_texto = respuesta.json().get("response", "").strip().upper()
-            logger.info(f"Clasificación VL página {i}: {respuesta_texto!r}")
+            cuerpo = respuesta.json()
+            respuesta_texto = (cuerpo.get("response") or "").strip().upper()
+            logger.info(f"Clasificación VL página {i}: response={respuesta_texto!r} done_reason={cuerpo.get('done_reason')!r}")
             for t in _TIPOS_VALIDOS_VL:
                 if t in respuesta_texto:
                     tipo = t
