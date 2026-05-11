@@ -29,7 +29,7 @@ def _imagen_a_base64(pil_image: Image.Image) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
-def pdf_a_imagenes(ruta_pdf: str, dpi: int = 200) -> list:
+def pdf_a_imagenes(ruta_pdf: str, dpi: int = 300) -> list:
     """Convierte todas las páginas del PDF a imágenes PIL."""
     info = pdfinfo_from_path(ruta_pdf)
     total = info["Pages"]
