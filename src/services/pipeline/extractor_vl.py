@@ -20,7 +20,7 @@ from .extractor import _PROMPT_MAP, TipoDocumentoNoSoportado
 logger = logging.getLogger(__name__)
 
 URL_OLLAMA = os.getenv("URL_OLLAMA")
-MODELO_VL = os.getenv("MODELO_VL", "qwen3-vl:30b")
+MODELO_VL = os.getenv("MODELO_VL", "qwen3-vl:8b")
 
 
 def _imagen_a_base64(pil_image: Image.Image) -> str:
