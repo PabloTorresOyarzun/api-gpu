@@ -194,6 +194,9 @@ def extraer_documento_vl(imagenes: list, tipo_documento: str) -> dict:
 
     cuerpo = respuesta.json()
     res_json = cuerpo.get("response", "")
+    if not res_json:
+        # Con format:json y modelos de razonamiento, Ollama a veces mete el JSON en 'thinking'
+        res_json = cuerpo.get("thinking", "")
     logger.info(f"Extracción VL done_reason={cuerpo.get('done_reason')!r} tokens={cuerpo.get('eval_count')} respuesta_len={len(res_json)}")
     match = re.search(r"\{.*\}", res_json, re.DOTALL)
     if not match:
