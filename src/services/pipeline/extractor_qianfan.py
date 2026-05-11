@@ -84,4 +84,5 @@ def ocr_pdf_qianfan(ruta_pdf: str) -> str:
 def procesar_pdf_qianfan(ruta_pdf: str, tipo_documento: str = "DOCUMENTO_TRANSPORTE") -> dict:
     """Entrypoint del pipeline híbrido: Qianfan-OCR transcribe, Qwen3:14b extrae."""
     texto = ocr_pdf_qianfan(ruta_pdf)
+    logger.info(f"[Qianfan OCR] Texto extraído ({len(texto)} chars):\n{texto[:2000]}")
     return extraer_documento(texto, tipo_documento)
