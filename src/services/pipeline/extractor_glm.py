@@ -30,41 +30,53 @@ def _imagen_a_base64(pil_image) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
+def _llamar_glm(img_b64: str, modo: str) -> str:
+    """Llama a GLM-OCR con un modo específico ('Text Recognition: ' o 'Table Recognition: ')."""
+    respuesta = requests.post(
+        URL_OLLAMA,
+        json={
+            "model": MODELO_OCR_VL,
+            "prompt": modo,
+            "images": [img_b64],
+            "stream": False,
+            "keep_alive": 300,
+            "options": {
+                "num_ctx": 24576,
+                "num_predict": 12288,
+                "temperature": 0,
+            },
+        },
+        timeout=TIMEOUT_OCR_VL,
+    )
+    if respuesta.status_code != 200:
+        logger.warning(f"GLM-OCR error modo {modo!r}: {respuesta.status_code}")
+        return ""
+    return respuesta.json().get("response", "")
+
+
 def ocr_paginas_glm(imagenes: list) -> dict:
     """
-    Transcribe cada página con GLM-OCR y devuelve {n: texto}.
+    Transcribe cada página con GLM-OCR en dos pasadas (Text + Table) y devuelve {n: texto}.
     Filtra páginas de Terms & Conditions legales como hace el pipeline VL.
     """
     _KEYWORDS_LEGAL = ["LIABILITY", "INDEMNIFY", "WARRANT", "JURISDICTION", "ARBITRATION", "CLAUSE"]
     textos = {}
     for i, img in enumerate(imagenes, 1):
         img_b64 = _imagen_a_base64(img)
-        respuesta = requests.post(
-            URL_OLLAMA,
-            json={
-                "model": MODELO_OCR_VL,
-                "prompt": "Extract all text from this page exactly as it appears, preserving the layout and reading order. Output only the raw text.",
-                "images": [img_b64],
-                "stream": False,
-                "keep_alive": 300,
-                "options": {
-                    "num_ctx": 24576,
-                    "num_predict": 12288,
-                    "temperature": 0,
-                },
-            },
-            timeout=TIMEOUT_OCR_VL,
+
+        texto_general = _llamar_glm(img_b64, "Text Recognition: ")
+        texto_tablas = _llamar_glm(img_b64, "Table Recognition: ")
+
+        texto = (
+            "=== TEXTO GENERAL ===\n"
+            f"{texto_general}\n\n"
+            "=== TABLAS ===\n"
+            f"{texto_tablas}"
         )
-        if respuesta.status_code != 200:
-            logger.warning(f"GLM-OCR error página {i}: {respuesta.status_code}")
-            textos[i] = ""
-            continue
 
-        texto = respuesta.json().get("response", "")
-
-        palabras = len(texto.split())
+        palabras = len(texto_general.split())
         if palabras > 600:
-            hits = sum(1 for k in _KEYWORDS_LEGAL if k in texto.upper())
+            hits = sum(1 for k in _KEYWORDS_LEGAL if k in texto_general.upper())
             if hits >= 3:
                 logger.info(f"Página {i} identificada como T&C legal — omitida")
                 textos[i] = ""
