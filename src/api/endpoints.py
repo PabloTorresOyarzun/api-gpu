@@ -2,6 +2,7 @@ import os
 import asyncio
 import tempfile
 import logging
+import time
 from typing import Annotated
 
 from litestar import post, get, Request
@@ -51,13 +52,21 @@ async def procesar_endpoint(
     nombre = data.filename or "documento"
 
     try:
+        t_inicio = time.perf_counter()
+        tiempos = {}
+
         logger.info(f"[procesar] Paso 0: Convirtiendo {nombre}")
+        t0 = time.perf_counter()
         pdf_bytes = await convertir_a_pdf(contenido, nombre)
+        tiempos["paso_0_conversion"] = round(time.perf_counter() - t0, 3)
 
         logger.info(f"[procesar] Paso 1: Sanitizando ({len(pdf_bytes)} bytes)")
+        t0 = time.perf_counter()
         pdf_bytes, alertas = await asyncio.to_thread(sanitizar_pdf, pdf_bytes)
+        tiempos["paso_1_sanitizacion"] = round(time.perf_counter() - t0, 3)
 
         logger.info("[procesar] Paso 2: OCR Surya")
+        t0 = time.perf_counter()
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(pdf_bytes)
             ruta_temporal = tmp.name
@@ -69,12 +78,16 @@ async def procesar_endpoint(
                 os.unlink(ruta_temporal)
 
         textos_por_pagina = parsear_textos_ocr(textos_raw)
+        tiempos["paso_2_ocr"] = round(time.perf_counter() - t0, 3)
 
         logger.info(f"[procesar] Paso 3: Clasificando {len(textos_por_pagina)} páginas")
+        t0 = time.perf_counter()
         clasificaciones = clasificar_paginas(textos_por_pagina)
         documentos = await asyncio.to_thread(segmentar_pdf, pdf_bytes, clasificaciones)
+        tiempos["paso_3_clasificacion"] = round(time.perf_counter() - t0, 3)
 
         logger.info(f"[procesar] Paso 4: Extrayendo datos de {len(documentos)} documento(s)")
+        t0 = time.perf_counter()
         resultados = []
         for doc in documentos:
             doc_resultado = {
@@ -101,12 +114,16 @@ async def procesar_endpoint(
 
             resultados.append(doc_resultado)
 
+        tiempos["paso_4_extraccion"] = round(time.perf_counter() - t0, 3)
+        tiempos["total"] = round(time.perf_counter() - t_inicio, 3)
+
         return {
             "filename": nombre,
             "total_paginas": len(textos_por_pagina),
             "clasificaciones": clasificaciones,
             "documentos": resultados,
             "alertas_sanitizacion": alertas,
+            "tiempos_segundos": tiempos,
         }
 
     except ValueError as e:
@@ -140,13 +157,21 @@ async def procesar_endpoint_vl(
     nombre = data.filename or "documento"
 
     try:
+        t_inicio = time.perf_counter()
+        tiempos = {}
+
         logger.info(f"[procesar-vl] Paso 0: Convirtiendo {nombre}")
+        t0 = time.perf_counter()
         pdf_bytes = await convertir_a_pdf(contenido, nombre)
+        tiempos["paso_0_conversion"] = round(time.perf_counter() - t0, 3)
 
         logger.info(f"[procesar-vl] Paso 1: Sanitizando ({len(pdf_bytes)} bytes)")
+        t0 = time.perf_counter()
         pdf_bytes, alertas = await asyncio.to_thread(sanitizar_pdf, pdf_bytes)
+        tiempos["paso_1_sanitizacion"] = round(time.perf_counter() - t0, 3)
 
         logger.info("[procesar-vl] Paso 2: Convirtiendo páginas a imágenes")
+        t0 = time.perf_counter()
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(pdf_bytes)
             ruta_temporal = tmp.name
@@ -156,12 +181,16 @@ async def procesar_endpoint_vl(
         finally:
             if os.path.exists(ruta_temporal):
                 os.unlink(ruta_temporal)
+        tiempos["paso_2_imagenes"] = round(time.perf_counter() - t0, 3)
 
         logger.info(f"[procesar-vl] Paso 3: Clasificando {len(imagenes_doc)} páginas por visión")
+        t0 = time.perf_counter()
         clasificaciones = await asyncio.to_thread(clasificar_paginas_vl, imagenes_doc)
         documentos = await asyncio.to_thread(segmentar_pdf, pdf_bytes, clasificaciones)
+        tiempos["paso_3_clasificacion"] = round(time.perf_counter() - t0, 3)
 
         logger.info(f"[procesar-vl] Paso 4: Extrayendo datos de {len(documentos)} documento(s)")
+        t0 = time.perf_counter()
         resultados = []
         for doc in documentos:
             doc_resultado = {
@@ -187,12 +216,16 @@ async def procesar_endpoint_vl(
 
             resultados.append(doc_resultado)
 
+        tiempos["paso_4_extraccion"] = round(time.perf_counter() - t0, 3)
+        tiempos["total"] = round(time.perf_counter() - t_inicio, 3)
+
         return {
             "filename": nombre,
             "total_paginas": len(imagenes_doc),
             "clasificaciones": clasificaciones,
             "documentos": resultados,
             "alertas_sanitizacion": alertas,
+            "tiempos_segundos": tiempos,
         }
 
     except ValueError as e:
@@ -229,13 +262,21 @@ async def procesar_endpoint_glm(
     nombre = data.filename or "documento"
 
     try:
+        t_inicio = time.perf_counter()
+        tiempos = {}
+
         logger.info(f"[procesar-glm] Paso 0: Convirtiendo {nombre}")
+        t0 = time.perf_counter()
         pdf_bytes = await convertir_a_pdf(contenido, nombre)
+        tiempos["paso_0_conversion"] = round(time.perf_counter() - t0, 3)
 
         logger.info(f"[procesar-glm] Paso 1: Sanitizando ({len(pdf_bytes)} bytes)")
+        t0 = time.perf_counter()
         pdf_bytes, alertas = await asyncio.to_thread(sanitizar_pdf, pdf_bytes)
+        tiempos["paso_1_sanitizacion"] = round(time.perf_counter() - t0, 3)
 
         logger.info("[procesar-glm] Paso 2: OCR GLM-OCR")
+        t0 = time.perf_counter()
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(pdf_bytes)
             ruta_temporal = tmp.name
@@ -247,12 +288,16 @@ async def procesar_endpoint_glm(
                 os.unlink(ruta_temporal)
 
         textos_por_pagina = parsear_textos_ocr(textos_raw)
+        tiempos["paso_2_ocr"] = round(time.perf_counter() - t0, 3)
 
         logger.info(f"[procesar-glm] Paso 3: Clasificando {len(textos_por_pagina)} páginas")
+        t0 = time.perf_counter()
         clasificaciones = clasificar_paginas(textos_por_pagina)
         documentos = await asyncio.to_thread(segmentar_pdf, pdf_bytes, clasificaciones)
+        tiempos["paso_3_clasificacion"] = round(time.perf_counter() - t0, 3)
 
         logger.info(f"[procesar-glm] Paso 4: Extrayendo datos de {len(documentos)} documento(s)")
+        t0 = time.perf_counter()
         resultados = []
         for doc in documentos:
             doc_resultado = {
@@ -278,12 +323,16 @@ async def procesar_endpoint_glm(
 
             resultados.append(doc_resultado)
 
+        tiempos["paso_4_extraccion"] = round(time.perf_counter() - t0, 3)
+        tiempos["total"] = round(time.perf_counter() - t_inicio, 3)
+
         return {
             "filename": nombre,
             "total_paginas": len(textos_por_pagina),
             "clasificaciones": clasificaciones,
             "documentos": resultados,
             "alertas_sanitizacion": alertas,
+            "tiempos_segundos": tiempos,
         }
 
     except ValueError as e:
