@@ -13,8 +13,9 @@ import base64
 import logging
 import requests
 
+from pdf2image import convert_from_path, pdfinfo_from_path
+
 from .extractor import extraer_documento, TipoDocumentoNoSoportado
-from .extractor_vl import pdf_a_imagenes
 
 logger = logging.getLogger(__name__)
 
@@ -74,9 +75,20 @@ def ocr_paginas_qianfan(imagenes: list) -> dict:
     return textos
 
 
+def _pdf_a_imagenes_qianfan(ruta_pdf: str, dpi: int = 300) -> list:
+    """Convierte PDF a imágenes sin preprocesamiento — Qianfan lee mejor las imágenes originales."""
+    info = pdfinfo_from_path(ruta_pdf)
+    total = info["Pages"]
+    imagenes = []
+    for n in range(1, total + 1):
+        imgs = convert_from_path(ruta_pdf, dpi=dpi, first_page=n, last_page=n)
+        imagenes.extend(imgs)
+    return imagenes
+
+
 def ocr_pdf_qianfan(ruta_pdf: str) -> str:
     """PDF → imágenes → texto concatenado por Qianfan-OCR (compatible con parsear_textos_ocr)."""
-    imagenes = pdf_a_imagenes(ruta_pdf)
+    imagenes = _pdf_a_imagenes_qianfan(ruta_pdf)
     textos = ocr_paginas_qianfan(imagenes)
     return "\n\n--- NUEVA PAGINA ---\n\n".join(textos.get(i, "") for i in sorted(textos))
 
