@@ -48,8 +48,8 @@ def ocr_paginas_qianfan(imagenes: list) -> dict:
                 "stream": False,
                 "keep_alive": 300,
                 "options": {
-                    "num_ctx": 8192,
-                    "num_predict": 4096,
+                    "num_ctx": 24576,
+                    "num_predict": 12288,
                     "temperature": 0,
                 },
             },
