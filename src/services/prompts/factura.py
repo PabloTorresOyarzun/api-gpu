@@ -136,17 +136,19 @@ REGLAS DE DESAMBIGUACIÓN:
 unit_of_measure debe medir CUÁNTOS o CUÁNTO se vende del producto. Valores como "Knitt", "Cotton", "Plastic", "Style", "Type", "Color", "Red", "100% Polyester", "Round", "Long" son ATRIBUTOS del producto, NO unidades. Si la columna que parece "unidad" contiene un material, tejido, color, forma o categoría, devuelve null en unit_of_measure y guarda ese dato en items[].additional_attributes.
 
 2. SELLER vs SHIPPER vs MANUFACTURER
-seller es quien EMITE la factura y cobra. Aparece en encabezado/firma. Manufacturer (fabricante) puede ser distinto y va en additional_attributes del item correspondiente si aparece. shipper (en el BL) puede o no coincidir con seller — no lo confundas.
+seller es quien EMITE la factura y cobra. En una factura con membrete (letterhead), el SELLER es la empresa cuyo nombre/logo aparece IMPRESO EN EL MEMBRETE — el encabezado grande al inicio del documento. El BUYER es quien aparece en el bloque "TO:", "BILL TO:", "SOLD TO:", "Messrs.", "ATENCIÓN:", "CONSIGNEE:" o similar. Aunque el buyer tenga más datos visibles (RUT, teléfono detallado, dirección), eso NO lo convierte en seller — los compradores extranjeros proporcionan sus datos fiscales para que el seller los consigne. Si el membrete muestra "EMPRESA X" y debajo hay un bloque "Messrs.: EMPRESA Y", entonces seller=EMPRESA X y buyer=EMPRESA Y, sin importar cuál tiene más información.
+Manufacturer (fabricante) puede ser distinto y va en additional_attributes del item correspondiente si aparece. shipper (en el BL) puede o no coincidir con seller — no lo confundas.
 IDENTIFICADORES FISCALES POR PAÍS: el formato de un tax_id revela su país. Si el formato NO coincide con el país de la entidad, no lo asignes a esa entidad — pertenece a otra del documento. Formatos clave: RUT chileno (dígitos con puntos y guión, termina en letra o dígito verificador, ej: "89.010.200-K", "12.345.678-9"), USCC chino (18 caracteres alfanuméricos), CNPJ brasileño (XX.XXX.XXX/XXXX-XX), EIN americano (XX-XXXXXXX), CUIT argentino (XX-XXXXXXXX-X). Ejemplo: seller japonés → "89.010.200-K" es RUT chileno, pertenece al buyer chileno → seller.tax_id: null, buyer.tax_id: "89.010.200-K".
 TELÉFONOS Y EMAILS POR CÓDIGO DE PAÍS: el código del teléfono debe ser consistente con el país de la entidad. Ejemplos de códigos: China +86, Chile +56, EE.UU. +1, Alemania +49, Brasil +55, India +91, Italia +39, España +34, México +52, Vietnam +84, Turquía +90. Si en el pie de página o en una sección genérica aparece un teléfono con código de país DISTINTO al país del seller, ese teléfono NO es del seller (probablemente es del buyer, agente local o representante). En ese caso devuelve seller.phone: null y, si corresponde claramente al buyer (mismo código de país que el buyer), úsalo para buyer.phone. Lo mismo aplica para emails con dominios geográficos (.cn, .cl, .de, etc.) cuando hay desajuste evidente.
 
 3. BUYER vs SHIP_TO vs CONSIGNEE
 buyer es quien COMPRA y paga (cliente fiscal). ship_to es el destino físico de la mercancía. Si la factura tiene un solo "TO" o "BILL TO", llena buyer y deja ship_to en null. Si distingue "BILL TO" / "SOLD TO" de "SHIP TO" / "DELIVER TO", llena ambos.
 
-4. FECHAS
-issue_date: fecha cuando la factura fue EMITIDA por el seller.
+4. FECHAS e INVOICE NUMBER
+invoice_number: el identificador único de la factura emitido por el seller. Etiquetas comunes: "INVOICE No.", "Invoice No.", "No.", "Invoice Number", "Document No.", "Factura No.", "Nº Factura". Si el documento tiene un "No." en el encabezado junto a la fecha de la factura, ese es el invoice_number. No confundir con referencias del buyer ("P.O. No.", "Your Ref.") ni con "Ref No." que suele ser referencia de despacho.
+issue_date: fecha cuando la factura fue EMITIDA por el seller. Etiquetas comunes: "Date:", "Invoice Date:", "Issue Date:", "Fecha de emisión". La fecha del documento principal (la que acompaña al invoice_number en el encabezado) es la issue_date.
 due_date: fecha límite de pago si está explícita.
-shipment_date: fecha de embarque/despacho si está explícita.
+shipment_date: fecha de embarque/despacho si está explícita. Etiquetas: "Shipment Date:", "On or about:", "ETD:", "Departure:".
 NO confundir entre sí. NO usar la fecha del BL como issue_date.
 
 5. SUBTOTAL, TOTAL Y CARGOS

@@ -75,7 +75,7 @@ def ocr_paginas_qianfan(imagenes: list) -> dict:
     return textos
 
 
-def _pdf_a_imagenes_qianfan(ruta_pdf: str, dpi: int = 300) -> list:
+def _pdf_a_imagenes_qianfan(ruta_pdf: str, dpi: int = 500) -> list:
     """Convierte PDF a imágenes sin preprocesamiento — Qianfan lee mejor las imágenes originales."""
     info = pdfinfo_from_path(ruta_pdf)
     total = info["Pages"]
