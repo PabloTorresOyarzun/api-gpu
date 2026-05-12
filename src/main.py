@@ -10,7 +10,7 @@ from litestar.middleware import DefineMiddleware
 
 from .services.pipeline.extractor import cargar_modelos
 from .api.middleware import FiltroIPMiddleware
-from .api.endpoints import procesar_endpoint, procesar_endpoint_vl, procesar_endpoint_glm, procesar_endpoint_glm_sdk, health
+from .api.endpoints import procesar_endpoint, procesar_endpoint_vl, procesar_endpoint_glm, health
 
 
 async def on_startup() -> None:
@@ -20,7 +20,7 @@ async def on_startup() -> None:
 
 
 app = Litestar(
-    route_handlers=[procesar_endpoint, procesar_endpoint_vl, procesar_endpoint_glm, procesar_endpoint_glm_sdk, health],
+    route_handlers=[procesar_endpoint, procesar_endpoint_vl, procesar_endpoint_glm, health],
     middleware=[DefineMiddleware(FiltroIPMiddleware)],
     on_startup=[on_startup],
     openapi_config=OpenAPIConfig(
@@ -34,9 +34,8 @@ app = Litestar(
             "Imágenes → Clasificación + Extracción (Qwen3-VL multimodal).\n\n"
             "**Pipeline GLM-OCR** (`/procesar-glm`): Conversión → Sanitización → "
             "OCR (GLM-OCR VL) → Clasificación → Extracción (Qwen3:14b texto).\n\n"
-            "**Pipeline GLM-OCR SDK** (`/procesar-glm-sdk`): Conversión → Sanitización → "
-            "Layout Analysis (PP-DocLayout-V3) + GLM-OCR por región → Markdown estructurado → "
-            "Clasificación → Extracción (Qwen3:14b texto)."
+            "**Pipeline GLM-OCR** (`/procesar-glm`): Conversión → Sanitización → "
+            "OCR (GLM-OCR VL) → Clasificación → Extracción (Qwen3:14b texto)."
         ),
         render_plugins=[SwaggerRenderPlugin()],
         path="/docs",
