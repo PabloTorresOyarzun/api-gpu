@@ -1,11 +1,11 @@
 """
-Pipeline híbrido: Qianfan-OCR (visión) para transcribir + Qwen3:14b para extracción JSON.
+Pipeline híbrido: GLM-OCR (visión) para transcribir + Qwen3:14b para extracción JSON.
 
-- Qianfan-OCR es un modelo VL especializado en OCR de documentos — lee mejor
+- GLM-OCR es un modelo VL especializado en OCR de documentos — lee mejor
   números en tablas y mantiene el layout.
 - Qwen3:14b sigue siendo el responsable de mapear el texto al JSON estructurado.
 
-Convive con extractor.py y extractor_vl.py — se expone vía /procesar-qianfan.
+Convive con extractor.py y extractor_vl.py — se expone vía /procesar-glm.
 """
 import os
 import io
@@ -30,9 +30,9 @@ def _imagen_a_base64(pil_image) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
-def ocr_paginas_qianfan(imagenes: list) -> dict:
+def ocr_paginas_glm(imagenes: list) -> dict:
     """
-    Transcribe cada página con Qianfan-OCR y devuelve {n: texto}.
+    Transcribe cada página con GLM-OCR y devuelve {n: texto}.
     Filtra páginas de Terms & Conditions legales como hace el pipeline VL.
     """
     _KEYWORDS_LEGAL = ["LIABILITY", "INDEMNIFY", "WARRANT", "JURISDICTION", "ARBITRATION", "CLAUSE"]
@@ -56,7 +56,7 @@ def ocr_paginas_qianfan(imagenes: list) -> dict:
             timeout=TIMEOUT_OCR_VL,
         )
         if respuesta.status_code != 200:
-            logger.warning(f"Qianfan OCR error página {i}: {respuesta.status_code}")
+            logger.warning(f"GLM-OCR error página {i}: {respuesta.status_code}")
             textos[i] = ""
             continue
 
@@ -75,8 +75,8 @@ def ocr_paginas_qianfan(imagenes: list) -> dict:
     return textos
 
 
-def _pdf_a_imagenes_qianfan(ruta_pdf: str, dpi: int = 500) -> list:
-    """Convierte PDF a imágenes sin preprocesamiento — Qianfan lee mejor las imágenes originales."""
+def _pdf_a_imagenes_glm(ruta_pdf: str, dpi: int = 500) -> list:
+    """Convierte PDF a imágenes sin preprocesamiento — GLM-OCR lee mejor las imágenes originales."""
     info = pdfinfo_from_path(ruta_pdf)
     total = info["Pages"]
     imagenes = []
@@ -86,15 +86,15 @@ def _pdf_a_imagenes_qianfan(ruta_pdf: str, dpi: int = 500) -> list:
     return imagenes
 
 
-def ocr_pdf_qianfan(ruta_pdf: str) -> str:
-    """PDF → imágenes → texto concatenado por Qianfan-OCR (compatible con parsear_textos_ocr)."""
-    imagenes = _pdf_a_imagenes_qianfan(ruta_pdf)
-    textos = ocr_paginas_qianfan(imagenes)
+def ocr_pdf_glm(ruta_pdf: str) -> str:
+    """PDF → imágenes → texto concatenado por GLM-OCR (compatible con parsear_textos_ocr)."""
+    imagenes = _pdf_a_imagenes_glm(ruta_pdf)
+    textos = ocr_paginas_glm(imagenes)
     return "\n\n--- NUEVA PAGINA ---\n\n".join(textos.get(i, "") for i in sorted(textos))
 
 
-def procesar_pdf_qianfan(ruta_pdf: str, tipo_documento: str = "DOCUMENTO_TRANSPORTE") -> dict:
-    """Entrypoint del pipeline híbrido: Qianfan-OCR transcribe, Qwen3:14b extrae."""
-    texto = ocr_pdf_qianfan(ruta_pdf)
-    logger.info(f"[Qianfan OCR] Texto extraído ({len(texto)} chars):\n{texto[:2000]}")
+def procesar_pdf_glm(ruta_pdf: str, tipo_documento: str = "DOCUMENTO_TRANSPORTE") -> dict:
+    """Entrypoint del pipeline híbrido: GLM-OCR transcribe, Qwen3:14b extrae."""
+    texto = ocr_pdf_glm(ruta_pdf)
+    logger.info(f"[GLM-OCR] Texto extraído ({len(texto)} chars):\n{texto[:2000]}")
     return extraer_documento(texto, tipo_documento)
