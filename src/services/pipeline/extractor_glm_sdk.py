@@ -1,72 +1,50 @@
 """
-Pipeline GLM-OCR vía SDK oficial (glmocr[selfhosted]).
+Pipeline GLM-OCR vía contenedor `glm-ocr-sdk` (HTTP).
 
-Diferencia clave con extractor_glm.py:
-- extractor_glm.py hace llamadas crudas a Ollama (un solo prompt por página).
-- Aquí usamos el SDK oficial que hace layout analysis (PP-DocLayout-V3) +
-  recognition en paralelo por región, devolviendo markdown estructurado.
+El SDK glmocr[selfhosted] no se puede instalar junto a surya-ocr en el mismo
+contenedor (conflicto de Pillow y torch). Por eso vive en un contenedor aparte
+(docker/glmocr/) y aquí solo llamamos a su endpoint HTTP /parse.
 
-El markdown resultante se pasa a Qwen3:14b para extraer el JSON final.
+El SDK hace internamente: layout analysis (PP-DocLayout-V3) + recognition por
+región vía Ollama → markdown estructurado. El markdown se pasa luego a
+Qwen3:14b para la extracción JSON.
 """
 import os
 import io
+import base64
 import logging
-import tempfile
-from urllib.parse import urlparse
 
-import yaml
+import requests
 from pdf2image import convert_from_path, pdfinfo_from_path
 
 from .extractor import extraer_documento, TipoDocumentoNoSoportado
 
 logger = logging.getLogger(__name__)
 
-URL_OLLAMA = os.getenv("URL_OLLAMA", "http://localhost:11434/api/generate")
-MODELO_OCR_VL = os.getenv("MODELO_OCR_VL", "glm-ocr:bf16")
-
-_CONFIG_PATH = "/tmp/glmocr_config.yaml"
-_GLM_PARSER = None
+URL_GLM_SDK = os.getenv("URL_GLM_SDK", "http://glm-ocr-sdk:5002/parse")
+TIMEOUT_GLM_SDK = int(os.getenv("TIMEOUT_GLM_SDK", "600"))
 
 
-def _construir_config() -> str:
-    """Genera el config.yaml del SDK apuntando al Ollama del env."""
-    parsed = urlparse(URL_OLLAMA)
-    host = parsed.hostname or "localhost"
-    port = parsed.port or 11434
-    path = parsed.path or "/api/generate"
-
-    config = {
-        "pipeline": {
-            "maas": {"enabled": False},
-            "ocr_api": {
-                "api_host": host,
-                "api_port": port,
-                "api_path": path,
-                "model": MODELO_OCR_VL,
-                "api_mode": "ollama_generate",
-            },
-        },
-    }
-
-    with open(_CONFIG_PATH, "w") as f:
-        yaml.safe_dump(config, f)
-
-    logger.info(f"[GLM-SDK] Config generado en {_CONFIG_PATH}: host={host} port={port} model={MODELO_OCR_VL}")
-    return _CONFIG_PATH
+def _imagen_a_base64(pil_image) -> str:
+    buf = io.BytesIO()
+    pil_image.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
 
 
-def _get_parser():
-    """Lazy-init del parser SDK. Reutiliza la instancia entre páginas."""
-    global _GLM_PARSER
-    if _GLM_PARSER is None:
-        from glmocr import GlmOcr
-        config_path = _construir_config()
-        _GLM_PARSER = GlmOcr(config_path=config_path).__enter__()
-    return _GLM_PARSER
+def _parse_pagina(img_b64: str) -> str:
+    """Llama al contenedor glm-ocr-sdk y devuelve el markdown estructurado."""
+    respuesta = requests.post(
+        URL_GLM_SDK,
+        json={"image_base64": img_b64},
+        timeout=TIMEOUT_GLM_SDK,
+    )
+    if respuesta.status_code != 200:
+        logger.warning(f"glm-ocr-sdk respondió {respuesta.status_code}: {respuesta.text[:200]}")
+        return ""
+    return respuesta.json().get("markdown", "")
 
 
 def _pdf_a_imagenes(ruta_pdf: str, dpi: int = 300) -> list:
-    """Convierte PDF a imágenes página por página."""
     info = pdfinfo_from_path(ruta_pdf)
     total = info["Pages"]
     imagenes = []
@@ -77,28 +55,17 @@ def _pdf_a_imagenes(ruta_pdf: str, dpi: int = 300) -> list:
 
 
 def ocr_paginas_glm_sdk(imagenes: list) -> dict:
-    """
-    Parsea cada página con el SDK GLM-OCR (layout + recognition).
-    Devuelve {n: markdown_estructurado}.
-    """
+    """Parsea cada página vía el contenedor SDK y devuelve {n: markdown}."""
     _KEYWORDS_LEGAL = ["LIABILITY", "INDEMNIFY", "WARRANT", "JURISDICTION", "ARBITRATION", "CLAUSE"]
-    parser = _get_parser()
     textos = {}
 
     for i, img in enumerate(imagenes, 1):
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            img.save(tmp.name, format="PNG")
-            tmp_path = tmp.name
-
+        img_b64 = _imagen_a_base64(img)
         try:
-            result = parser.parse(tmp_path)
-            markdown = result.markdown_result or ""
+            markdown = _parse_pagina(img_b64)
         except Exception as e:
-            logger.warning(f"GLM-OCR SDK error página {i}: {e}")
+            logger.warning(f"glm-ocr-sdk error página {i}: {e}")
             markdown = ""
-        finally:
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
 
         palabras = len(markdown.split())
         if palabras > 600:
@@ -114,14 +81,13 @@ def ocr_paginas_glm_sdk(imagenes: list) -> dict:
 
 
 def ocr_pdf_glm_sdk(ruta_pdf: str) -> str:
-    """PDF → imágenes → markdown concatenado vía SDK."""
     imagenes = _pdf_a_imagenes(ruta_pdf)
     textos = ocr_paginas_glm_sdk(imagenes)
     return "\n\n--- NUEVA PAGINA ---\n\n".join(textos.get(i, "") for i in sorted(textos))
 
 
 def procesar_pdf_glm_sdk(ruta_pdf: str, tipo_documento: str = "DOCUMENTO_TRANSPORTE") -> dict:
-    """Entrypoint: SDK transcribe con layout, Qwen3:14b extrae JSON."""
+    """Entrypoint: SDK (vía contenedor) transcribe con layout, Qwen3:14b extrae JSON."""
     texto = ocr_pdf_glm_sdk(ruta_pdf)
     logger.info(f"[GLM-SDK] Markdown extraído ({len(texto)} chars):\n{texto[:2000]}")
     return extraer_documento(texto, tipo_documento)

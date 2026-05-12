@@ -17,5 +17,3 @@ pandas>=2.2.0
 openpyxl>=3.1.0
 xlrd>=2.0.0
 reportlab>=4.0.0
-# GLM-OCR SDK (layout analysis + parallel recognition)
-glmocr[selfhosted]

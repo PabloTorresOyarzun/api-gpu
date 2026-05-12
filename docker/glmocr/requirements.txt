@@ -1,0 +1,3 @@
+glmocr[selfhosted]
+flask
+pyyaml
