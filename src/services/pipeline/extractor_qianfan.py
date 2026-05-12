@@ -20,7 +20,7 @@ from .extractor import extraer_documento, TipoDocumentoNoSoportado
 logger = logging.getLogger(__name__)
 
 URL_OLLAMA = os.getenv("URL_OLLAMA")
-MODELO_OCR_VL = os.getenv("MODELO_OCR_VL", "Maternion/Qianfan-OCR:4b")
+MODELO_OCR_VL = os.getenv("MODELO_OCR_VL", "glm-ocr:bf16")
 TIMEOUT_OCR_VL = int(os.getenv("TIMEOUT_OCR_VL", "600"))
 
 
