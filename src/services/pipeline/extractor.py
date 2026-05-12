@@ -221,6 +221,21 @@ def extraer_documento(texto_documento: str, tipo_documento: str) -> dict:
     return json.loads(match.group(0))
 
 
+def detectar_regiones(imagenes: list) -> list[list]:
+    """Corre solo DetectionPredictor y devuelve [[x1,y1,x2,y2], ...] por página."""
+    cargar_modelos()
+    resultados = _detection_predictor(imagenes)
+    paginas = []
+    for pagina in resultados:
+        bboxes = []
+        for det in pagina.bboxes:
+            b = getattr(det, "bbox", None)
+            if b and len(b) == 4:
+                bboxes.append(list(b))
+        paginas.append(bboxes)
+    return paginas
+
+
 def procesar_pdf(ruta_pdf: str, tipo_documento: str = "DOCUMENTO_TRANSPORTE") -> dict:
     import torch
     import gc

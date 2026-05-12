@@ -14,6 +14,7 @@ from litestar.exceptions import HTTPException
 from ..services.pipeline.extractor import procesar_pdf, ocr_pdf, TipoDocumentoNoSoportado
 from ..services.pipeline.extractor_vl import procesar_pdf_vl, pdf_a_imagenes, ocr_paginas_vl, clasificar_paginas_vl
 from ..services.pipeline.extractor_glm import procesar_pdf_glm, ocr_pdf_glm
+from ..services.pipeline.extractor_hybrid import procesar_pdf_hybrid, ocr_pdf_hybrid
 from ..services.pipeline.sanitizer import sanitizar_pdf
 from ..services.pipeline.classifier import clasificar_paginas, segmentar_pdf
 
@@ -339,4 +340,113 @@ async def procesar_endpoint_glm(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.exception(f"Error en pipeline GLM-OCR para {nombre}")
+        raise HTTPException(status_code=500, detail=f"Error procesando documento: {str(e)}")
+
+
+@post("/procesar-hibrido", tags=["Tratamiento"])
+async def procesar_endpoint_hybrid(
+    request: Request,
+    data: Annotated[UploadFile, Body(media_type=RequestEncodingType.MULTI_PART)],
+) -> dict:
+    """
+    Pipeline híbrido: Surya detecta regiones (layout) + GLM-OCR transcribe cada región.
+
+    Combina lo mejor de ambos modelos: Surya segmenta la página en bloques
+    (texto, tabla, cabecera) y GLM-OCR lee cada bloque recortado con su calidad
+    superior para documentos. Qwen3:14b extrae el JSON final.
+
+    1. Convierte a PDF (si es Excel o imagen)
+    2. Sanitiza (repara, analiza calidad, corrige rotación)
+    3. Surya DetectionPredictor detecta bboxes por página
+    4. Bboxes se agrupan en bloques por proximidad vertical
+    5. GLM-OCR transcribe cada bloque recortado
+    6. Clasifica páginas por tipo de documento (texto)
+    7. Segmenta en documentos individuales
+    8. Extrae datos estructurados con Qwen3:14b
+
+    Acepta: PDF, Excel (.xlsx/.xls/.xlsm), imágenes (.jpg/.png/.tiff/etc.)
+    """
+    validar_api_key(request)
+
+    contenido = await data.read()
+    nombre = data.filename or "documento"
+
+    try:
+        t_inicio = time.perf_counter()
+        tiempos = {}
+
+        logger.info(f"[procesar-hibrido] Paso 0: Convirtiendo {nombre}")
+        t0 = time.perf_counter()
+        pdf_bytes = await convertir_a_pdf(contenido, nombre)
+        tiempos["paso_0_conversion"] = round(time.perf_counter() - t0, 3)
+
+        logger.info(f"[procesar-hibrido] Paso 1: Sanitizando ({len(pdf_bytes)} bytes)")
+        t0 = time.perf_counter()
+        pdf_bytes, alertas = await asyncio.to_thread(sanitizar_pdf, pdf_bytes)
+        tiempos["paso_1_sanitizacion"] = round(time.perf_counter() - t0, 3)
+
+        logger.info("[procesar-hibrido] Paso 2: Surya detection + GLM-OCR por bloque")
+        t0 = time.perf_counter()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(pdf_bytes)
+            ruta_temporal = tmp.name
+
+        try:
+            textos_raw = await asyncio.to_thread(ocr_pdf_hybrid, ruta_temporal)
+        finally:
+            if os.path.exists(ruta_temporal):
+                os.unlink(ruta_temporal)
+
+        textos_por_pagina = parsear_textos_ocr(textos_raw)
+        tiempos["paso_2_ocr_hibrido"] = round(time.perf_counter() - t0, 3)
+
+        logger.info(f"[procesar-hibrido] Paso 3: Clasificando {len(textos_por_pagina)} páginas")
+        t0 = time.perf_counter()
+        clasificaciones = clasificar_paginas(textos_por_pagina)
+        documentos = await asyncio.to_thread(segmentar_pdf, pdf_bytes, clasificaciones)
+        tiempos["paso_3_clasificacion"] = round(time.perf_counter() - t0, 3)
+
+        logger.info(f"[procesar-hibrido] Paso 4: Extrayendo datos de {len(documentos)} documento(s)")
+        t0 = time.perf_counter()
+        resultados = []
+        for doc in documentos:
+            doc_resultado = {
+                "tipo": doc["tipo"],
+                "paginas": doc["paginas"],
+            }
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                tmp.write(doc["pdf_bytes"])
+                ruta_doc = tmp.name
+            try:
+                datos = await asyncio.to_thread(procesar_pdf_hybrid, ruta_doc, doc["tipo"])
+                doc_resultado["datos_extraidos"] = datos
+            except TipoDocumentoNoSoportado:
+                doc_resultado["datos_extraidos"] = None
+            except Exception as e:
+                logger.warning(f"Error híbrido extrayendo segmento {doc['tipo']} págs {doc['paginas']}: {e}")
+                doc_resultado["datos_extraidos"] = None
+                doc_resultado["error_extraccion"] = str(e)
+            finally:
+                if os.path.exists(ruta_doc):
+                    os.unlink(ruta_doc)
+
+            resultados.append(doc_resultado)
+
+        tiempos["paso_4_extraccion"] = round(time.perf_counter() - t0, 3)
+        tiempos["total"] = round(time.perf_counter() - t_inicio, 3)
+
+        return {
+            "filename": nombre,
+            "total_paginas": len(textos_por_pagina),
+            "clasificaciones": clasificaciones,
+            "documentos": resultados,
+            "alertas_sanitizacion": alertas,
+            "tiempos_segundos": tiempos,
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Error en pipeline híbrido para {nombre}")
         raise HTTPException(status_code=500, detail=f"Error procesando documento: {str(e)}")
