@@ -125,9 +125,16 @@ def ocr_paginas_hybrid(imagenes_originales: list, imagenes_surya: list) -> dict:
 
         texto = "\n".join(partes)
 
+        texto_upper = texto.upper()
+
+        if "OVERLEAF INSTRUCTION" in texto_upper:
+            logger.info(f"Página {i} identificada como instrucciones (Overleaf) — omitida")
+            textos[i] = ""
+            continue
+
         palabras = len(texto.split())
         if palabras > 600:
-            hits = sum(1 for k in _KEYWORDS_LEGAL if k in texto.upper())
+            hits = sum(1 for k in _KEYWORDS_LEGAL if k in texto_upper)
             if hits >= 3:
                 logger.info(f"Página {i} identificada como T&C legal — omitida")
                 textos[i] = ""
