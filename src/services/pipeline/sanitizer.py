@@ -238,7 +238,7 @@ def _validate_scanned_rotation(img_rgb: np.ndarray, page_text: str = "") -> tupl
     """
     MIN_CONF_90_270 = 1.0
     MIN_CONF_180 = 2.0
-    MIN_SCRIPT_CONF_180 = 5.0  # Safeguard contra páginas numéricas/vacías
+    MIN_SCRIPT_CONF_180 = 1.0  # Safeguard contra páginas numéricas/vacías
     AMBIGUITY_MARGIN = 1.5
 
     rot, conf, script_conf = _tesseract_osd_rotation(img_rgb)
