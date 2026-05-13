@@ -12,7 +12,7 @@ import fitz
 import re
 import logging
 from typing import List, Dict, Tuple
-from .patterns import PATRONES_INICIO, PATRONES_NEGATIVOS, PATRON_DEFAULT
+from ...utils.patterns import PATRONES_INICIO, PATRONES_NEGATIVOS, PATRON_DEFAULT
 
 logger = logging.getLogger(__name__)
 

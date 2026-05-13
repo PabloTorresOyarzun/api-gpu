@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -25,4 +25,4 @@ COPY . .
 
 EXPOSE 8500
 
-CMD ["litestar", "--app", "src:app", "run", "--host", "0.0.0.0", "--port", "8500"]
+CMD ["litestar", "--app", "src.main:app", "run", "--host", "0.0.0.0", "--port", "8500"]
