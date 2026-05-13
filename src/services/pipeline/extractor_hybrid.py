@@ -70,12 +70,23 @@ def _recortar(pil_image, bbox, padding: int = 10):
     return pil_image.crop((x1, y1, x2, y2))
 
 
-def _modo_glm(bbox) -> str:
+def _leer_bloque(img_b64: str, bbox) -> str:
+    """
+    Lee un bloque con GLM-OCR.
+    Bloques de tabla (ratio ancho/alto > 5): corre ambos modos para no perder
+    texto flotante fuera de celdas (ej. "FOB SHANGHAI" encima de la tabla).
+    Bloques de texto: solo Text Recognition.
+    """
     w = bbox[2] - bbox[0]
     h = bbox[3] - bbox[1]
-    if h > 0 and (w / h) > 5:
-        return "Table Recognition: "
-    return "Text Recognition: "
+    es_tabla = h > 0 and (w / h) > 5
+
+    texto = _llamar_glm(img_b64, "Text Recognition: ")
+    if es_tabla:
+        tabla = _llamar_glm(img_b64, "Table Recognition: ")
+        if tabla.strip() and tabla.strip() != texto.strip():
+            return f"{texto}\n{tabla}"
+    return texto
 
 
 def ocr_paginas_hybrid(imagenes_originales: list, imagenes_surya: list) -> dict:
@@ -104,9 +115,8 @@ def ocr_paginas_hybrid(imagenes_originales: list, imagenes_surya: list) -> dict:
             recorte = _recortar(img_orig, bbox)
             recorte = _preprocess_crop_for_glm(recorte)
             img_b64 = _imagen_a_base64(recorte)
-            modo = _modo_glm(bbox)
             try:
-                texto_bloque = _llamar_glm(img_b64, modo)
+                texto_bloque = _leer_bloque(img_b64, bbox)
             except Exception as e:
                 logger.warning(f"GLM-OCR error bloque página {i}: {e}")
                 texto_bloque = ""
