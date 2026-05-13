@@ -5,7 +5,7 @@ import logging
 import requests
 import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter, ImageEnhance
 from pdf2image import convert_from_path, pdfinfo_from_path
 from surya.recognition import RecognitionPredictor
 from surya.detection import DetectionPredictor
@@ -64,6 +64,61 @@ def _preprocess_image(pil_image: Image.Image) -> Image.Image:
 
     rgb = cv2.cvtColor(enhanced, cv2.COLOR_GRAY2RGB)
     return Image.fromarray(rgb)
+
+
+def _preprocess_crop_for_glm(crop: Image.Image, min_width: int = 900) -> Image.Image:
+    """
+    Preprocesamiento específico para imágenes enviadas a GLM-OCR.
+    Distinto al de Surya: mantiene color, escala al mínimo y aplica sharpening suave.
+    GLM-OCR funciona mejor con imágenes nítidas en color que con las grises + CLAHE de Surya.
+    """
+    w, h = crop.size
+    if w < min_width:
+        scale = min_width / w
+        crop = crop.resize((min_width, max(1, int(h * scale))), Image.LANCZOS)
+
+    crop = crop.filter(ImageFilter.UnsharpMask(radius=1.5, percent=140, threshold=3))
+    crop = ImageEnhance.Contrast(crop).enhance(1.15)
+    return crop
+
+
+_INCOTERM_RE = re.compile(
+    r'\b(EXW|FCA|CPT|CIP|DAP|DPU|DDP|FAS|FOB|CFR|CIF)\b[,\s\-]+([A-Z][A-Z\s]{2,30}?)(?=[\n\r,;.(]|$)',
+    re.IGNORECASE | re.MULTILINE,
+)
+_TRANSPORT_SIGNALS = {
+    "SEA": ["vessel", "voyage", "voy.", "port of loading", "port of discharge", " b/l ", "bill of lading", "ocean freight"],
+    "AIR": ["flight no", "awb", "air waybill", "airport", "airfreight"],
+    "ROAD": ["truck", "road transport", "carretera"],
+    "RAIL": ["rail", "train", "railway"],
+}
+
+
+def _patch_extracted_fields(data: dict, raw_text: str) -> dict:
+    """
+    Post-procesamiento determinístico: parchea campos null que Qwen pasó por alto
+    buscando patrones concretos en el texto OCR crudo.
+    No toca campos que Qwen ya llenó.
+    """
+    upper = raw_text.upper()
+
+    if not data.get("incoterm"):
+        m = _INCOTERM_RE.search(raw_text)
+        if m:
+            data["incoterm"] = m.group(1).upper()
+            location = m.group(2).strip().rstrip("., ").upper()
+            if location and not data.get("incoterm_location"):
+                data["incoterm_location"] = location
+
+    shipment = data.get("shipment") or {}
+    if not shipment.get("transport_mode"):
+        for mode, hints in _TRANSPORT_SIGNALS.items():
+            if any(h.upper() in upper for h in hints):
+                shipment["transport_mode"] = mode
+                data["shipment"] = shipment
+                break
+
+    return data
 
 
 def _get_bbox(text_line):
@@ -218,7 +273,8 @@ def extraer_documento(texto_documento: str, tipo_documento: str) -> dict:
     if not match:
         raise ValueError(f"La IA no devolvió un JSON válido. Respuesta: {res_json[:500]}")
 
-    return json.loads(match.group(0))
+    resultado = json.loads(match.group(0))
+    return _patch_extracted_fields(resultado, texto_documento)
 
 
 def detectar_regiones(imagenes: list) -> list[list]:

@@ -5,6 +5,10 @@ Pipeline híbrido: Surya detecta regiones (layout) + GLM-OCR lee cada región.
 - Los bboxes se agrupan verticalmente para evitar decenas de llamadas a Ollama.
 - GLM-OCR transcribe cada bloque recortado con máxima calidad.
 - Qwen3:14b extrae el JSON final.
+
+Separación clave:
+  - Surya recibe la imagen preprocesada (escala de grises + CLAHE) → mejor detección.
+  - GLM recibe recortes de la imagen ORIGINAL en color + sharpening propio → mejor OCR.
 """
 import io
 import base64
@@ -12,7 +16,10 @@ import logging
 
 from pdf2image import convert_from_path, pdfinfo_from_path
 
-from .extractor import detectar_regiones, extraer_documento, _preprocess_image
+from .extractor import (
+    detectar_regiones, extraer_documento,
+    _preprocess_image, _preprocess_crop_for_glm,
+)
 from .extractor_glm import _llamar_glm
 
 logger = logging.getLogger(__name__)
@@ -71,12 +78,15 @@ def _modo_glm(bbox) -> str:
     return "Text Recognition: "
 
 
-def ocr_paginas_hybrid(imagenes: list) -> dict:
-    """Detección Surya → agrupamiento → GLM-OCR por bloque. Devuelve {n: texto}."""
+def ocr_paginas_hybrid(imagenes_originales: list, imagenes_surya: list) -> dict:
+    """
+    Detección Surya (en imagenes_surya) → agrupamiento → GLM-OCR por bloque (en imagenes_originales).
+    Devuelve {n: texto}.
+    """
     textos = {}
 
-    for i, img in enumerate(imagenes, 1):
-        bboxes = detectar_regiones([img])[0]
+    for i, (img_orig, img_surya) in enumerate(zip(imagenes_originales, imagenes_surya), 1):
+        bboxes = detectar_regiones([img_surya])[0]
         if not bboxes:
             logger.warning(f"Página {i}: Surya no detectó regiones")
             textos[i] = ""
@@ -90,7 +100,9 @@ def ocr_paginas_hybrid(imagenes: list) -> dict:
             area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
             if area < 1000:
                 continue
-            recorte = _recortar(img, bbox)
+
+            recorte = _recortar(img_orig, bbox)
+            recorte = _preprocess_crop_for_glm(recorte)
             img_b64 = _imagen_a_base64(recorte)
             modo = _modo_glm(bbox)
             try:
@@ -119,11 +131,16 @@ def ocr_paginas_hybrid(imagenes: list) -> dict:
 def ocr_pdf_hybrid(ruta_pdf: str) -> str:
     info = pdfinfo_from_path(ruta_pdf)
     total = info["Pages"]
-    imagenes = []
+
+    imagenes_originales = []
+    imagenes_surya = []
     for n in range(1, total + 1):
         imgs = convert_from_path(ruta_pdf, dpi=500, first_page=n, last_page=n)
-        imagenes.extend([_preprocess_image(img) for img in imgs])
-    textos = ocr_paginas_hybrid(imagenes)
+        for img in imgs:
+            imagenes_originales.append(img)
+            imagenes_surya.append(_preprocess_image(img))
+
+    textos = ocr_paginas_hybrid(imagenes_originales, imagenes_surya)
     return "\n\n--- NUEVA PAGINA ---\n\n".join(textos.get(i, "") for i in sorted(textos))
 
 
