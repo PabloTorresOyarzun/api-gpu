@@ -82,71 +82,6 @@ def _preprocess_crop_for_glm(crop: Image.Image, min_width: int = 900) -> Image.I
     return crop
 
 
-# Regex simplificado: no usa lookahead, captura hasta 2 palabras mayúsculas consecutivas.
-# Evita falsos negativos cuando GLM formatea tablas con separadores | o espacios extras.
-_INCOTERM_RE = re.compile(
-    r'\b(EXW|FCA|CPT|CIP|DAP|DPU|DDP|FAS|FOB|CFR|CIF)\b[\s,\-]+([A-Z]{2,}(?:\s+[A-Z]{2,})?)',
-    re.IGNORECASE,
-)
-
-# Patrón de AWB: 3 dígitos + guión + 8 dígitos (ej. "180-12345678")
-_AWB_RE = re.compile(r'^\d{3}-\d{8}$')
-
-
-def _patch_extracted_fields(data: dict, raw_text: str) -> dict:
-    """
-    Post-procesamiento determinístico: parchea campos null que Qwen pasó por alto
-    buscando patrones concretos en el texto OCR crudo y en el JSON ya extraído.
-    No toca campos que Qwen ya llenó.
-    """
-    upper = raw_text.upper()
-
-    # Incoterm: busca patrón en texto crudo
-    if not data.get("incoterm"):
-        m = _INCOTERM_RE.search(raw_text)
-        if m:
-            data["incoterm"] = m.group(1).upper()
-            location = m.group(2).strip().upper()
-            if location and not data.get("incoterm_location"):
-                data["incoterm_location"] = location
-
-    # transport_mode: primero infiere desde el JSON ya extraído por Qwen,
-    # luego como fallback busca señales en el texto crudo.
-    shipment = data.get("shipment") or {}
-    if not shipment.get("transport_mode"):
-        bl = shipment.get("bl_or_awb_number") or ""
-        vessel = shipment.get("vessel_or_flight") or ""
-        pol = shipment.get("port_of_loading") or ""
-        pod = shipment.get("port_of_discharge") or ""
-
-        if bl and _AWB_RE.match(bl.strip()):
-            shipment["transport_mode"] = "AIR"
-        elif bl or vessel or pol or pod:
-            # Cualquier campo de transporte marítimo/terrestre relleno → asumir SEA
-            # (es el modo más común en comercio exterior; si fuera aéreo, AWB sería visible)
-            shipment["transport_mode"] = "SEA"
-        else:
-            signals = {
-                "SEA": ["vessel", "voyage", "bill of lading", "ocean freight"],
-                "AIR": ["awb", "air waybill", "airfreight"],
-                "ROAD": ["truck", "road transport"],
-                "RAIL": ["railway", "rail freight"],
-            }
-            for mode, hints in signals.items():
-                if any(h in upper for h in hints):
-                    shipment["transport_mode"] = mode
-                    break
-
-        data["shipment"] = shipment
-
-    return data
-
-
-                break
-
-    return data
-
-
 def _get_bbox(text_line):
     """Devuelve [x1, y1, x2, y2] del text_line o None si no está disponible."""
     bbox = getattr(text_line, "bbox", None)
@@ -299,8 +234,7 @@ def extraer_documento(texto_documento: str, tipo_documento: str) -> dict:
     if not match:
         raise ValueError(f"La IA no devolvió un JSON válido. Respuesta: {res_json[:500]}")
 
-    resultado = json.loads(match.group(0))
-    return _patch_extracted_fields(resultado, texto_documento)
+    return json.loads(match.group(0))
 
 
 def detectar_regiones(imagenes: list) -> list[list]:

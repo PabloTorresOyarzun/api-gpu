@@ -162,7 +162,6 @@ Si subtotal == total_amount y no hay impuestos, descuentos ni cargos, está bien
 "CIF VALPARAISO" → incoterm: "CIF", incoterm_location: "VALPARAISO".
 "EXW Beijing factory" → incoterm: "EXW", incoterm_location: "BEIJING".
 incoterm_location es siempre un lugar geográfico (puerto, aeropuerto, ciudad, terminal).
-El incoterm puede aparecer en CUALQUIER parte del documento: encabezados, pies de página, cabeceras de columna, sello o cuadro junto al precio, notas al pie. Búscalo ACTIVAMENTE aunque no esté en una sección dedicada.
 
 7. REFERENCIAS (PO, contrato, cotización, Ref No)
 Campos del documento como "Ref No.", "Ref:", "Reference", "Your Ref.", "Our Ref.", "Mark No.", que no sean el número de factura ni el PO ni el contrato → capturar en references.customer_reference si es claramente la referencia del cliente/comprador, o en references.other si su rol no está claro. En facturas asiáticas, "Ref No" suele ser la referencia de despacho o de pedido del comprador y debe capturarse siempre.
