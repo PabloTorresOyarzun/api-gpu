@@ -188,6 +188,42 @@ def ocr_pdf(ruta_pdf: str) -> str:
     return "\n\n--- NUEVA PAGINA ---\n\n".join(texto_paginas)
 
 
+# Límites de contexto/predicción por tipo de documento. LISTA_EMBALAJE produce
+# JSONs muy grandes (cientos de filas) y requiere más capacidad para no truncar.
+_LLM_LIMITS_DEFAULT = {"num_ctx": 24576, "num_predict": 12288}
+_LLM_LIMITS_POR_TIPO = {
+    "LISTA_EMBALAJE": {"num_ctx": 32768, "num_predict": 24576},
+}
+
+
+def _llamar_qwen(prompt_sistema: str, prompt_usuario: str, num_ctx: int, num_predict: int) -> str:
+    respuesta = requests.post(
+        URL_OLLAMA,
+        json={
+            "model": MODELO,
+            "system": prompt_sistema,
+            "prompt": prompt_usuario,
+            "format": "json",
+            "stream": False,
+            "think": False,
+            "keep_alive": 0,
+            "options": {
+                "num_ctx": num_ctx,
+                "num_predict": num_predict,
+                "temperature": 0,
+                "top_p": 0.9,
+                "top_k": 20,
+                "repeat_penalty": 1.0,
+                "seed": 42,
+            },
+        },
+        timeout=600,
+    )
+    if respuesta.status_code != 200:
+        raise RuntimeError(f"Error de Ollama: {respuesta.status_code} - {respuesta.text}")
+    return respuesta.json().get("response", "")
+
+
 def extraer_documento(texto_documento: str, tipo_documento: str) -> dict:
     prompt_sistema = _PROMPT_MAP.get(tipo_documento)
     if not prompt_sistema:
@@ -203,38 +239,29 @@ def extraer_documento(texto_documento: str, tipo_documento: str) -> dict:
         f"Documento a procesar:\n\n{texto_documento}"
     )
 
-    respuesta = requests.post(
-        URL_OLLAMA,
-        json={
-            "model": MODELO,
-            "system": prompt_sistema,
-            "prompt": prompt_usuario,
-            "format": "json",
-            "stream": False,
-            "think": False,
-            "keep_alive": 0,
-            "options": {
-                "num_ctx": 24576,
-                "num_predict": 12288,
-                "temperature": 0,
-                "top_p": 0.9,
-                "top_k": 20,
-                "repeat_penalty": 1.0,
-                "seed": 42,
-            },
-        },
-        timeout=600,
-    )
+    limites = _LLM_LIMITS_POR_TIPO.get(tipo_documento, _LLM_LIMITS_DEFAULT)
+    res_json = _llamar_qwen(prompt_sistema, prompt_usuario, limites["num_ctx"], limites["num_predict"])
 
-    if respuesta.status_code != 200:
-        raise RuntimeError(f"Error de Ollama: {respuesta.status_code} - {respuesta.text}")
-
-    res_json = respuesta.json().get("response", "")
     match = re.search(r"\{.*\}", res_json, re.DOTALL)
     if not match:
         raise ValueError(f"La IA no devolvió un JSON válido. Respuesta: {res_json[:500]}")
 
-    return json.loads(match.group(0))
+    try:
+        return json.loads(match.group(0))
+    except json.JSONDecodeError as e:
+        # Reintento con más capacidad: documentos densos (packing lists grandes) pueden
+        # producir JSON malformado cuando Qwen se queda corto de tokens o repite estructura.
+        logger.warning(f"JSON inválido para {tipo_documento} ({e}). Reintentando con límites aumentados.")
+        res_json = _llamar_qwen(
+            prompt_sistema,
+            prompt_usuario,
+            num_ctx=min(limites["num_ctx"] * 2, 65536),
+            num_predict=min(limites["num_predict"] * 2, 49152),
+        )
+        match = re.search(r"\{.*\}", res_json, re.DOTALL)
+        if not match:
+            raise ValueError(f"La IA no devolvió JSON válido tras reintento. Respuesta: {res_json[:500]}")
+        return json.loads(match.group(0))
 
 
 def detectar_regiones(imagenes: list) -> list[list]:

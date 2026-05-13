@@ -120,9 +120,17 @@ REGLAS DE DESAMBIGUACIÓN Y FORMATO:
 
 3. CONTAINERS — INDIVIDUALES vs TOTAL
 Cada contenedor físico es UN objeto en el array containers. Si el documento dice "ONE (1) CONTAINER", el array tiene 1 elemento, no más.
-container_no y seal_no son códigos distintos. El contenedor suele tener 4 letras + 7 dígitos (ej: EMCU8613665). El sello es el otro código alfanumérico.
+container_no y seal_no son códigos distintos. El contenedor SIEMPRE tiene formato ISO 6346: 4 letras mayúsculas + 7 dígitos (ej: EMCU8613665, HLHU8423392, MSNU7008106). El sello es OTRO código alfanumérico, suele ser más corto o con prefijo del puerto (ej: SKBKK000823, EMCULH6403, FX38750739).
 Cuando veas formato "CODIGO1/CODIGO2/40'HQ/N PACKAGES/PESO KGS/VOLUMEN CBM", el primer código es container_no, el segundo es seal_no. NO los concatenes.
 La estructura puede aparecer como tabla con columnas "Cntr No / Seal No. / Sz/Ty / Qty / Pkg Type / Weight". En ese caso: container_no=Cntr No, seal_no=Seal No., type=Sz/Ty, packages_count=Qty, packages_type=Pkg Type, gross_weight_kg=Weight. NO uses los totales globales para campos individuales.
+
+CONTAINER vs SHIPPING MARKS — distinción crítica:
+Muchos B/L tienen una columna ancha titulada "Container No. / Seal No. / Marks and Numbers" donde APARECEN AMBOS conceptos apilados. NO mezcles unos con otros.
+- container_no DEBE matchear el patrón ISO 6346 (4 letras + 7 dígitos, ej: HLHU8423392). Si el código no encaja en ese patrón, NO es un container_no — probablemente es una shipping mark.
+- seal_no es un código alfanumérico separado, generalmente con letras del puerto de origen (BKK, SHA, NGB, etc.) + dígitos.
+- Las shipping marks típicas incluyen: códigos de pedido tipo "0010028000-33176", referencias de producto tipo "1983-8728WP-TH", nombre del puerto destino en mayúsculas, rangos de cartones tipo "C/NO. 1-151", "CTNS NO. 1/250". TODO eso va al campo "marks", NUNCA a container_no/seal_no.
+- Si en la misma celda ves un bloque arriba sin formato ISO 6346 y abajo aparece "CONTAINER NO. XXXX9999999 / NUMERO_SELLO", el bloque de arriba son marks; el de abajo son los códigos reales de contenedor/sello.
+- Si NO encuentras un código que cumpla el patrón ISO 6346 en todo el documento, devuelve container_no: null. Es preferible null antes que poner una shipping mark en su lugar.
 
 4. PESOS Y VOLÚMENES — TRANSCRIPCIÓN LITERAL
 Como números preservando los decimales tal como aparecen en el documento. Ejemplo: 14700.000 y 31.300, no 14700 ni "14,700 KGS".
