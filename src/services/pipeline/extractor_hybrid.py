@@ -147,5 +147,5 @@ def ocr_pdf_hybrid(ruta_pdf: str) -> str:
 def procesar_pdf_hybrid(ruta_pdf: str, tipo_documento: str = "DOCUMENTO_TRANSPORTE") -> dict:
     """Entrypoint: Surya layout + GLM-OCR transcribe, Qwen3:14b extrae JSON."""
     texto = ocr_pdf_hybrid(ruta_pdf)
-    logger.info(f"[HYBRID] Texto extraído ({len(texto)} chars):\n{texto[:2000]}")
+    logger.info(f"[HYBRID] Texto completo enviado a Qwen ({len(texto)} chars):\n{texto}")
     return extraer_documento(texto, tipo_documento)

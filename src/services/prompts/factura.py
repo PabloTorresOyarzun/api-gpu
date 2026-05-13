@@ -207,6 +207,11 @@ payment_terms siempre se llena con el texto literal aunque payment_method sea nu
 
 12. DATOS DE TRANSPORTE EN LA FACTURA
 Si la factura referencia el embarque (vessel, BL/AWB, ports, container numbers, weights), llena el bloque shipment. Esta información cruza con el BL en aduana. Si la factura no incluye estos datos, devuelve los campos en null.
+INFERENCIA DE transport_mode:
+- Si hay número de B/L (Bill of Lading) o puertos marítimos (port of loading/discharge) → transport_mode: "SEA".
+- Si hay número AWB (Air Waybill, formato típico "###-########" con guión) o aeropuertos → transport_mode: "AIR".
+- Si hay referencias a camión/carretera → transport_mode: "ROAD".
+- "FROM: SHANGHAI" / "TO: VALPARAISO" en una factura con B/L → implica transporte marítimo → transport_mode: "SEA".
 
 13. NORMALIZACIÓN DE VALORES
 - Direcciones en una sola línea, separando con comas, sin saltos de línea.
