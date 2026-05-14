@@ -3,6 +3,7 @@ import re
 import json
 import logging
 import requests
+import json_repair
 import cv2
 import numpy as np
 from PIL import Image, ImageFilter, ImageEnhance
@@ -196,7 +197,7 @@ _LLM_LIMITS_POR_TIPO = {
 }
 
 
-def _llamar_qwen(prompt_sistema: str, prompt_usuario: str, num_ctx: int, num_predict: int, timeout: int = 600) -> str:
+def _llamar_qwen(prompt_sistema: str, prompt_usuario: str, num_ctx: int, num_predict: int, timeout: int = 600, seed: int = 42) -> str:
     respuesta = requests.post(
         URL_OLLAMA,
         json={
@@ -214,7 +215,7 @@ def _llamar_qwen(prompt_sistema: str, prompt_usuario: str, num_ctx: int, num_pre
                 "top_p": 0.9,
                 "top_k": 20,
                 "repeat_penalty": 1.0,
-                "seed": 42,
+                "seed": seed,
             },
         },
         timeout=timeout,
@@ -244,30 +245,93 @@ def extraer_documento(texto_documento: str, tipo_documento: str) -> dict:
         prompt_sistema, prompt_usuario,
         limites["num_ctx"], limites["num_predict"], limites["timeout"],
     )
+    return _parse_json_con_fallback(res_json, prompt_sistema, prompt_usuario, tipo_documento, limites)
 
+
+def _extraer_json_str(res_json: str) -> str | None:
     match = re.search(r"\{.*\}", res_json, re.DOTALL)
-    if not match:
-        raise ValueError(f"La IA no devolvió un JSON válido. Respuesta: {res_json[:500]}")
+    return match.group(0) if match else None
 
+
+def _parse_json_con_fallback(res_json: str, prompt_sistema: str, prompt_usuario: str, tipo_documento: str, limites: dict) -> dict:
+    """
+    Pipeline escalonado de parsing:
+      1. json.loads estricto (gratis)
+      2. json_repair (gratis, arregla truncamientos/comas/comillas)
+      3. retry con misma config + seed distinta (segundos)
+      4. retry con limits aumentados (caro, último recurso)
+    """
+    json_str = _extraer_json_str(res_json)
+
+    # Etapa 1: parse estricto
+    if json_str:
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError as e:
+            logger.warning(
+                f"JSON estricto falló para {tipo_documento} ({e}). "
+                f"Tail respuesta: ...{res_json[-200:]!r}"
+            )
+
+    # Etapa 2: json_repair sobre la respuesta cruda (maneja JSON truncado mejor que el regex)
     try:
-        return json.loads(match.group(0))
-    except json.JSONDecodeError as e:
-        # Reintento con más capacidad: documentos densos (packing lists grandes) pueden
-        # producir JSON malformado cuando Qwen se queda corto de tokens o repite estructura.
-        retry_ctx = min(limites["num_ctx"] * 2, 65536)
-        retry_predict = min(limites["num_predict"] * 2, 49152)
-        retry_timeout = min(limites["timeout"] * 2, 3600)
-        logger.warning(f"JSON inválido para {tipo_documento} ({e}). Reintentando con límites aumentados (timeout={retry_timeout}s).")
-        res_json = _llamar_qwen(
-            prompt_sistema, prompt_usuario,
-            num_ctx=retry_ctx,
-            num_predict=retry_predict,
-            timeout=retry_timeout,
-        )
-        match = re.search(r"\{.*\}", res_json, re.DOTALL)
-        if not match:
-            raise ValueError(f"La IA no devolvió JSON válido tras reintento. Respuesta: {res_json[:500]}")
-        return json.loads(match.group(0))
+        reparado = json_repair.loads(res_json)
+        if isinstance(reparado, dict) and reparado:
+            logger.info(f"JSON reparado localmente para {tipo_documento} (sin reintento a Qwen).")
+            return reparado
+    except Exception as e:
+        logger.warning(f"json_repair falló para {tipo_documento}: {e}")
+
+    # Etapa 3: retry con misma config + seed distinta (descarta alucinación puntual)
+    logger.warning(f"Reintentando {tipo_documento} con seed alternativa (misma config).")
+    res_json_2 = _llamar_qwen(
+        prompt_sistema, prompt_usuario,
+        limites["num_ctx"], limites["num_predict"], limites["timeout"],
+        seed=1337,
+    )
+    json_str_2 = _extraer_json_str(res_json_2)
+    if json_str_2:
+        try:
+            return json.loads(json_str_2)
+        except json.JSONDecodeError:
+            pass
+    try:
+        reparado_2 = json_repair.loads(res_json_2)
+        if isinstance(reparado_2, dict) and reparado_2:
+            logger.info(f"JSON reparado localmente tras retry con seed para {tipo_documento}.")
+            return reparado_2
+    except Exception:
+        pass
+
+    # Etapa 4: retry con límites aumentados (último recurso, caro)
+    retry_ctx = min(limites["num_ctx"] * 2, 65536)
+    retry_predict = min(limites["num_predict"] * 2, 49152)
+    retry_timeout = min(limites["timeout"] * 2, 3600)
+    logger.warning(
+        f"Reintentando {tipo_documento} con límites aumentados "
+        f"(num_ctx={retry_ctx}, num_predict={retry_predict}, timeout={retry_timeout}s)."
+    )
+    res_json_3 = _llamar_qwen(
+        prompt_sistema, prompt_usuario,
+        num_ctx=retry_ctx, num_predict=retry_predict, timeout=retry_timeout,
+    )
+    json_str_3 = _extraer_json_str(res_json_3)
+    if json_str_3:
+        try:
+            return json.loads(json_str_3)
+        except json.JSONDecodeError:
+            pass
+    try:
+        reparado_3 = json_repair.loads(res_json_3)
+        if isinstance(reparado_3, dict) and reparado_3:
+            return reparado_3
+    except Exception:
+        pass
+
+    raise ValueError(
+        f"La IA no devolvió JSON válido tras 3 reintentos para {tipo_documento}. "
+        f"Última respuesta (tail): ...{res_json_3[-500:]}"
+    )
 
 
 def detectar_regiones(imagenes: list) -> list[list]:
