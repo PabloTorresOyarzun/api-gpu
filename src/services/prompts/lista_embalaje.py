@@ -143,4 +143,8 @@ NO apliques si el outlier difiere en más de 2 caracteres o si no hay patrón do
 Las claves DEBEN ser EXACTAMENTE las del esquema. additional_attributes es el único lugar con claves libres.
 
 9. IDIOMA
-Preserva los valores en su idioma original. Solo normaliza el formato (números, fechas)."""
+Preserva los valores en su idioma original. Solo normaliza el formato (números, fechas).
+
+10. COMPACTACIÓN DE ÍTEMS
+En el array items[], OMITE los campos que tendrían valor null. Solo incluye campos con valores reales extraídos del documento. El sistema rellenará automáticamente los campos ausentes con null.
+Excepción: line_number, description y quantity SIEMPRE deben incluirse aunque sean null."""

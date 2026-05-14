@@ -11,7 +11,7 @@ from litestar.enums import RequestEncodingType
 from litestar.datastructures import UploadFile
 from litestar.exceptions import HTTPException
 
-from ..services.pipeline.extractor import procesar_pdf, ocr_pdf, TipoDocumentoNoSoportado
+from ..services.pipeline.extractor import procesar_pdf, ocr_pdf, TipoDocumentoNoSoportado, extraer_documento, liberar_qwen
 from ..services.pipeline.extractor_vl import procesar_pdf_vl, pdf_a_imagenes, ocr_paginas_vl, clasificar_paginas_vl
 from ..services.pipeline.extractor_glm import procesar_pdf_glm, ocr_pdf_glm
 from ..services.pipeline.extractor_hybrid import procesar_pdf_hybrid, ocr_pdf_hybrid
@@ -406,32 +406,27 @@ async def procesar_endpoint_hybrid(
         documentos = await asyncio.to_thread(segmentar_pdf, pdf_bytes, clasificaciones)
         tiempos["paso_3_clasificacion"] = round(time.perf_counter() - t0, 3)
 
-        logger.info(f"[procesar-hibrido] Paso 4: Extrayendo datos de {len(documentos)} documento(s)")
+        logger.info(f"[procesar-hibrido] Paso 4: Extrayendo datos de {len(documentos)} documento(s) en paralelo")
         t0 = time.perf_counter()
-        resultados = []
-        for doc in documentos:
-            doc_resultado = {
-                "tipo": doc["tipo"],
-                "paginas": doc["paginas"],
-            }
 
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                tmp.write(doc["pdf_bytes"])
-                ruta_doc = tmp.name
+        async def _extraer_doc_hibrido(doc):
+            doc_resultado = {"tipo": doc["tipo"], "paginas": doc["paginas"]}
+            texto_doc = "\n\n--- NUEVA PAGINA ---\n\n".join(
+                textos_por_pagina.get(p, "") for p in doc["paginas"]
+            )
             try:
-                datos = await asyncio.to_thread(procesar_pdf_hybrid, ruta_doc, doc["tipo"])
+                datos = await asyncio.to_thread(extraer_documento, texto_doc, doc["tipo"])
                 doc_resultado["datos_extraidos"] = datos
             except TipoDocumentoNoSoportado:
                 doc_resultado["datos_extraidos"] = None
             except Exception as e:
-                logger.warning(f"Error híbrido extrayendo segmento {doc['tipo']} págs {doc['paginas']}: {e}")
+                logger.warning(f"Error híbrido extrayendo {doc['tipo']} págs {doc['paginas']}: {e}")
                 doc_resultado["datos_extraidos"] = None
                 doc_resultado["error_extraccion"] = str(e)
-            finally:
-                if os.path.exists(ruta_doc):
-                    os.unlink(ruta_doc)
+            return doc_resultado
 
-            resultados.append(doc_resultado)
+        resultados = list(await asyncio.gather(*[_extraer_doc_hibrido(doc) for doc in documentos]))
+        await asyncio.to_thread(liberar_qwen)
 
         tiempos["paso_4_extraccion"] = round(time.perf_counter() - t0, 3)
         tiempos["total"] = round(time.perf_counter() - t_inicio, 3)

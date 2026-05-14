@@ -249,4 +249,8 @@ NO apliques la regla si el outlier difiere en más de 2 caracteres, si no hay pa
 Las claves del JSON DEBEN ser EXACTAMENTE las del esquema. NUNCA las traduzcas, renombres ni adaptes a las etiquetas del documento. additional_attributes es el ÚNICO lugar donde puedes usar claves libres.
 
 17. IDIOMA
-Los valores de texto se preservan en su idioma original (no traduzcas nombres, descripciones, direcciones). Solo normaliza formato (mayúsculas no son obligatorias)."""
+Los valores de texto se preservan en su idioma original (no traduzcas nombres, descripciones, direcciones). Solo normaliza formato (mayúsculas no son obligatorias).
+
+18. COMPACTACIÓN DE ÍTEMS
+En el array items[], OMITE los campos que tendrían valor null. Solo incluye campos con valores reales extraídos del documento. El sistema rellenará automáticamente los campos ausentes con null.
+Excepción: line_number, description y quantity SIEMPRE deben incluirse aunque sean null."""
