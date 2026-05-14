@@ -190,13 +190,13 @@ def ocr_pdf(ruta_pdf: str) -> str:
 
 # Límites de contexto/predicción por tipo de documento. LISTA_EMBALAJE produce
 # JSONs muy grandes (cientos de filas) y requiere más capacidad para no truncar.
-_LLM_LIMITS_DEFAULT = {"num_ctx": 24576, "num_predict": 12288}
+_LLM_LIMITS_DEFAULT = {"num_ctx": 24576, "num_predict": 12288, "timeout": 600}
 _LLM_LIMITS_POR_TIPO = {
-    "LISTA_EMBALAJE": {"num_ctx": 32768, "num_predict": 24576},
+    "LISTA_EMBALAJE": {"num_ctx": 32768, "num_predict": 24576, "timeout": 1200},
 }
 
 
-def _llamar_qwen(prompt_sistema: str, prompt_usuario: str, num_ctx: int, num_predict: int) -> str:
+def _llamar_qwen(prompt_sistema: str, prompt_usuario: str, num_ctx: int, num_predict: int, timeout: int = 600) -> str:
     respuesta = requests.post(
         URL_OLLAMA,
         json={
@@ -217,7 +217,7 @@ def _llamar_qwen(prompt_sistema: str, prompt_usuario: str, num_ctx: int, num_pre
                 "seed": 42,
             },
         },
-        timeout=600,
+        timeout=timeout,
     )
     if respuesta.status_code != 200:
         raise RuntimeError(f"Error de Ollama: {respuesta.status_code} - {respuesta.text}")
@@ -240,7 +240,10 @@ def extraer_documento(texto_documento: str, tipo_documento: str) -> dict:
     )
 
     limites = _LLM_LIMITS_POR_TIPO.get(tipo_documento, _LLM_LIMITS_DEFAULT)
-    res_json = _llamar_qwen(prompt_sistema, prompt_usuario, limites["num_ctx"], limites["num_predict"])
+    res_json = _llamar_qwen(
+        prompt_sistema, prompt_usuario,
+        limites["num_ctx"], limites["num_predict"], limites["timeout"],
+    )
 
     match = re.search(r"\{.*\}", res_json, re.DOTALL)
     if not match:
@@ -251,12 +254,15 @@ def extraer_documento(texto_documento: str, tipo_documento: str) -> dict:
     except json.JSONDecodeError as e:
         # Reintento con más capacidad: documentos densos (packing lists grandes) pueden
         # producir JSON malformado cuando Qwen se queda corto de tokens o repite estructura.
-        logger.warning(f"JSON inválido para {tipo_documento} ({e}). Reintentando con límites aumentados.")
+        retry_ctx = min(limites["num_ctx"] * 2, 65536)
+        retry_predict = min(limites["num_predict"] * 2, 49152)
+        retry_timeout = min(limites["timeout"] * 2, 3600)
+        logger.warning(f"JSON inválido para {tipo_documento} ({e}). Reintentando con límites aumentados (timeout={retry_timeout}s).")
         res_json = _llamar_qwen(
-            prompt_sistema,
-            prompt_usuario,
-            num_ctx=min(limites["num_ctx"] * 2, 65536),
-            num_predict=min(limites["num_predict"] * 2, 49152),
+            prompt_sistema, prompt_usuario,
+            num_ctx=retry_ctx,
+            num_predict=retry_predict,
+            timeout=retry_timeout,
         )
         match = re.search(r"\{.*\}", res_json, re.DOTALL)
         if not match:
