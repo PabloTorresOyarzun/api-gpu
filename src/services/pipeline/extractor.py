@@ -276,8 +276,11 @@ _ITEM_DEFAULTS: dict[str, dict] = {
 }
 
 # Umbral y tipos que activan extracción por chunks.
+# LISTA_EMBALAJE excluida: su contexto global (totales, marcas, cabecera) se fragmenta
+# al dividir por páginas, degradando la calidad. Sus límites grandes (32768/24576) son
+# suficientes para una sola llamada.
 _UMBRAL_PALABRAS_GRANDE = 1200
-_TIPOS_CHUNKEABLE = {"FACTURA_COMERCIAL", "LISTA_EMBALAJE"}
+_TIPOS_CHUNKEABLE = {"FACTURA_COMERCIAL"}
 
 
 def _build_prompt_usuario(texto: str, es_continuacion: bool = False) -> str:
@@ -291,11 +294,20 @@ def _build_prompt_usuario(texto: str, es_continuacion: bool = False) -> str:
     return f"{_NOTA_OCR}\n\nDocumento a procesar:\n\n{texto}"
 
 
+def _limpiar_item(item: dict, defaults: dict) -> dict:
+    """
+    Fusiona defaults + item y elimina claves contaminadas con caracteres no-ASCII
+    (ej. 'additional属性' que Qwen a veces inyecta junto a 'additional_attributes').
+    """
+    merged = {**defaults, **item}
+    return {k: v for k, v in merged.items() if k.isascii()}
+
+
 def _rellenar_items(resultado: dict, tipo: str) -> dict:
     """Rellena con None los campos de items[] que Qwen omitió por schema compacto."""
     defaults = _ITEM_DEFAULTS.get(tipo)
     if defaults and "items" in resultado and isinstance(resultado["items"], list):
-        resultado["items"] = [{**defaults, **item} for item in resultado["items"]]
+        resultado["items"] = [_limpiar_item(item, defaults) for item in resultado["items"]]
     return resultado
 
 
