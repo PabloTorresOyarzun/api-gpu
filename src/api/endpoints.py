@@ -406,10 +406,10 @@ async def procesar_endpoint_hybrid(
         documentos = await asyncio.to_thread(segmentar_pdf, pdf_bytes, clasificaciones)
         tiempos["paso_3_clasificacion"] = round(time.perf_counter() - t0, 3)
 
-        logger.info(f"[procesar-hibrido] Paso 4: Extrayendo datos de {len(documentos)} documento(s) en paralelo")
+        logger.info(f"[procesar-hibrido] Paso 4: Extrayendo datos de {len(documentos)} documento(s) en serie")
         t0 = time.perf_counter()
-
-        async def _extraer_doc_hibrido(doc):
+        resultados = []
+        for doc in documentos:
             doc_resultado = {"tipo": doc["tipo"], "paginas": doc["paginas"]}
             texto_doc = "\n\n--- NUEVA PAGINA ---\n\n".join(
                 textos_por_pagina.get(p, "") for p in doc["paginas"]
@@ -423,9 +423,8 @@ async def procesar_endpoint_hybrid(
                 logger.warning(f"Error híbrido extrayendo {doc['tipo']} págs {doc['paginas']}: {e}")
                 doc_resultado["datos_extraidos"] = None
                 doc_resultado["error_extraccion"] = str(e)
-            return doc_resultado
+            resultados.append(doc_resultado)
 
-        resultados = list(await asyncio.gather(*[_extraer_doc_hibrido(doc) for doc in documentos]))
         await asyncio.to_thread(liberar_qwen)
 
         tiempos["paso_4_extraccion"] = round(time.perf_counter() - t0, 3)
