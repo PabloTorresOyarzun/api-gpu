@@ -115,6 +115,19 @@ unit_of_measure mide CUÁNTOS hay del producto. Material, color, tipo, fabric NO
 3. PESO BRUTO vs PESO NETO
 gross_weight_kg incluye el embalaje. net_weight_kg es solo la mercancía. NO los confundas. Si el packing list usa "weight" sin especificar, asume gross_weight_kg salvo que el contexto indique lo contrario.
 
+3.b CANTIDAD vs PESO — ERROR FRECUENTE EN PACKING LISTS DENSOS
+En tablas con columnas adyacentes Q'TY / N.W. / G.W. (cantidad, peso neto, peso bruto) es CRÍTICO no cruzar columnas. Pistas para mantenerlas separadas:
+- quantity tiene unidad PCS/SETS/PR (piezas, sets, pares) y suele ser un entero "redondo" (10, 20, 50, 100).
+- net_weight_kg y gross_weight_kg vienen en KG, son números (a menudo con decimales) y siempre cumplen gross >= net en la misma fila.
+- Ejemplo: una fila con "2 CTNS / 20 PCS / 35.00 KG / 37.00 KG" se mapea a package_count=2, quantity=20, net_weight_kg=35.0, gross_weight_kg=37.0. NO pongas quantity=35.
+- Si una "cantidad" no es un entero redondo y tiene decimales tipo .56 o .43, casi seguro es peso, no cantidad.
+Re-lee la fila completa contrastando con el encabezado antes de asignar.
+
+3.c ORIGEN DEL ITEM vs UBICACIÓN DEL SHIPPER
+country_of_origin de un item es el país DONDE SE MANUFACTURÓ la mercancía, NO el país donde está el shipper/exportador.
+Ejemplo: un shipper en Nara, Japan que embarca bombas fabricadas en Tailandia → country_of_origin = "Thailand", NO "Japan". El país de manufactura suele aparecer en una columna "Country of Origin" / "Made in" o en el campo "Country of Origin of Goods" en la cabecera.
+Si el packing list NO declara explícitamente el origen del item, devuelve null. NO copies automáticamente el país del shipper.
+
 4. SHIPPER vs CONSIGNEE vs SHIP_TO
 shipper: quien EMBARCA (exportador). consignee: titular fiscal del embarque (quien aparece en el BL como destinatario). ship_to: dirección física de entrega si difiere de consignee.
 IDENTIFICADORES FISCALES POR PAÍS: el formato del tax_id revela su país. Si el formato no coincide con el país de la entidad, no lo asignes a esa entidad. RUT chileno (dígitos con puntos y guión terminando en letra/dígito, ej: "89.010.200-K") → entidad chilena. USCC chino (18 car. alfanuméricos) → entidad china. CNPJ brasileño (XX.XXX.XXX/XXXX-XX) → entidad brasileña.

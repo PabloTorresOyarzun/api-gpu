@@ -14,6 +14,7 @@ from surya.detection import DetectionPredictor
 from surya.foundation import FoundationPredictor
 
 from ..prompts import transporte, factura, lista_embalaje, certificado_origen
+from ...utils.standards import corregir_direcciones_chilenas
 
 logger = logging.getLogger(__name__)
 
@@ -384,9 +385,12 @@ def extraer_documento(texto_documento: str, tipo_documento: str) -> dict:
     limites = _LLM_LIMITS_POR_TIPO.get(tipo_documento, _LLM_LIMITS_DEFAULT)
 
     if _es_documento_grande(texto_documento, tipo_documento):
-        return _extraer_documento_chunkeado(texto_documento, tipo_documento, prompt_sistema, limites)
+        resultado = _extraer_documento_chunkeado(texto_documento, tipo_documento, prompt_sistema, limites)
+    else:
+        resultado = _extraer_documento_simple(texto_documento, tipo_documento, prompt_sistema, limites)
 
-    return _extraer_documento_simple(texto_documento, tipo_documento, prompt_sistema, limites)
+    # Post-procesamiento: corregir comunas chilenas mal OCR'eadas en direcciones.
+    return corregir_direcciones_chilenas(resultado)
 
 
 def _extraer_json_str(res_json: str) -> str | None:
