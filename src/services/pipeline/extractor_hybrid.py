@@ -75,13 +75,16 @@ def _recortar(pil_image, bbox, padding: int = 10):
 def _leer_bloque(img_b64: str, bbox) -> str:
     """
     Lee un bloque con GLM-OCR.
-    Bloques de tabla (ratio ancho/alto > 5): corre ambos modos para no perder
-    texto flotante fuera de celdas (ej. "FOB SHANGHAI" encima de la tabla).
-    Bloques de texto: solo Text Recognition.
+    Bloques candidatos a tabla: ratio ancho/alto > 5 (headers tipo banda)
+    o área grande > 1M px (tabla de items completa, típicamente alta).
+    En esos casos corre Table Recognition además del Text Recognition
+    porque Text Recognition lee la tabla columna-por-columna en bloques altos.
     """
     w = bbox[2] - bbox[0]
     h = bbox[3] - bbox[1]
-    es_tabla = h > 0 and (w / h) > 5
+    area = w * h
+    ratio = (w / h) if h > 0 else 0
+    es_tabla = ratio > 5 or area > 1_000_000
 
     texto = _llamar_glm(img_b64, "Text Recognition: ")
     if es_tabla:
