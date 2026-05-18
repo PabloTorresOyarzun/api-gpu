@@ -153,6 +153,32 @@ def _reconstruct_text(text_lines) -> str:
     return "\n\n".join(parts)
 
 
+def _dump_surya_lines(text_lines, num_pagina: int, ruta_pdf: str) -> None:
+    """
+    Dump de debug: escribe bbox+texto de cada text_line a JSON.
+    Activado por env var OCR_DEBUG_DUMP=/ruta/al/directorio.
+    """
+    dump_dir = os.getenv("OCR_DEBUG_DUMP")
+    if not dump_dir:
+        return
+    try:
+        os.makedirs(dump_dir, exist_ok=True)
+        base = os.path.splitext(os.path.basename(ruta_pdf))[0]
+        out_path = os.path.join(dump_dir, f"{base}_p{num_pagina}.json")
+        lines_data = []
+        for tl in text_lines:
+            lines_data.append({
+                "bbox": _get_bbox(tl),
+                "text": getattr(tl, "text", "") or "",
+                "confidence": getattr(tl, "confidence", None),
+            })
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(lines_data, f, ensure_ascii=False, indent=2)
+        logger.info(f"Surya dump escrito: {out_path} ({len(lines_data)} líneas)")
+    except Exception as e:
+        logger.warning(f"Falló dump Surya pág {num_pagina}: {e}")
+
+
 def ocr_pdf(ruta_pdf: str) -> str:
     cargar_modelos()
 
@@ -172,6 +198,7 @@ def ocr_pdf(ruta_pdf: str) -> str:
 
         predicciones = _recognition_predictor(imagenes, det_predictor=_detection_predictor)
         for pagina in predicciones:
+            _dump_surya_lines(pagina.text_lines, num_pagina, ruta_pdf)
             texto_pagina = _reconstruct_text(pagina.text_lines)
             texto_upper = texto_pagina.upper()
             palabras = len(texto_pagina.split())
