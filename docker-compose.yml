@@ -5,12 +5,14 @@ services:
     restart: unless-stopped
     volumes:
       - surya-cache:/root/.cache/datalab
+      - ./debug_dump:/app/debug_dump
     env_file:
       - .env
     environment:
       - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
       - RECOGNITION_BATCH_SIZE=8
       - DETECTOR_BATCH_SIZE=2
+      - OCR_DEBUG_DUMP=/app/debug_dump
     ports:
       - "8500:8500"
     deploy:
