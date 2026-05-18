@@ -11,6 +11,8 @@ Separación clave:
   - GLM recibe recortes de la imagen ORIGINAL en color + sharpening propio → mejor OCR.
 """
 import io
+import os
+import json
 import base64
 import logging
 
@@ -89,7 +91,38 @@ def _leer_bloque(img_b64: str, bbox) -> str:
     return texto
 
 
-def ocr_paginas_hybrid(imagenes_originales: list, imagenes_surya: list) -> dict:
+def _dump_hybrid_page(pdf_base: str, num_pagina: int, bboxes, bloques, partes_detalle, texto_final) -> None:
+    """Dump de debug del pipeline híbrido. Activado por OCR_DEBUG_DUMP=/dir."""
+    dump_dir = os.getenv("OCR_DEBUG_DUMP")
+    if not dump_dir:
+        return
+    try:
+        os.makedirs(dump_dir, exist_ok=True)
+        out_path = os.path.join(dump_dir, f"{pdf_base}_hybrid_p{num_pagina}.json")
+        data = {
+            "pagina": num_pagina,
+            "n_bboxes_surya": len(bboxes),
+            "n_bloques_agrupados": len(bloques),
+            "bloques": [
+                {
+                    "bbox": [round(float(v), 1) for v in b["bbox"]],
+                    "area": int(b["area"]),
+                    "es_tabla": b["es_tabla"],
+                    "ratio_w_h": round(b["ratio"], 2),
+                    "texto_glm": b["texto"],
+                }
+                for b in partes_detalle
+            ],
+            "texto_final": texto_final,
+        }
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        logger.info(f"Hybrid dump pág {num_pagina}: {out_path}")
+    except Exception as e:
+        logger.warning(f"Falló dump hybrid pág {num_pagina}: {e}")
+
+
+def ocr_paginas_hybrid(imagenes_originales: list, imagenes_surya: list, pdf_base: str = "doc") -> dict:
     """
     Detección Surya (en imagenes_surya) → agrupamiento → GLM-OCR por bloque (en imagenes_originales).
     Devuelve {n: texto}.
@@ -107,6 +140,7 @@ def ocr_paginas_hybrid(imagenes_originales: list, imagenes_surya: list) -> dict:
         logger.info(f"Página {i}: {len(bboxes)} bboxes → {len(bloques)} bloques para GLM-OCR")
 
         partes = []
+        partes_detalle = []
         for bbox in bloques:
             area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
             if area < 1000:
@@ -122,8 +156,19 @@ def ocr_paginas_hybrid(imagenes_originales: list, imagenes_surya: list) -> dict:
                 texto_bloque = ""
             if texto_bloque.strip():
                 partes.append(texto_bloque)
+            w = bbox[2] - bbox[0]
+            h = bbox[3] - bbox[1]
+            ratio = (w / h) if h > 0 else 0
+            partes_detalle.append({
+                "bbox": bbox,
+                "area": area,
+                "ratio": ratio,
+                "es_tabla": ratio > 5,
+                "texto": texto_bloque,
+            })
 
         texto = "\n".join(partes)
+        _dump_hybrid_page(pdf_base, i, bboxes, bloques, partes_detalle, texto)
 
         texto_upper = texto.upper()
 
@@ -157,7 +202,8 @@ def ocr_pdf_hybrid(ruta_pdf: str) -> str:
             imagenes_originales.append(img)
             imagenes_surya.append(_preprocess_image(img))
 
-    textos = ocr_paginas_hybrid(imagenes_originales, imagenes_surya)
+    pdf_base = os.path.splitext(os.path.basename(ruta_pdf))[0]
+    textos = ocr_paginas_hybrid(imagenes_originales, imagenes_surya, pdf_base=pdf_base)
     return "\n\n--- NUEVA PAGINA ---\n\n".join(textos.get(i, "") for i in sorted(textos))
 
 
