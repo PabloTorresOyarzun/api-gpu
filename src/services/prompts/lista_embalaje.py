@@ -102,18 +102,18 @@ VOCABULARIO CONTROLADO:
 REGLAS DE DESAMBIGUACIÓN:
 
 1. ITEMS vs PACKAGES
-items: lista de PRODUCTOS (líneas comerciales, UNA por SKU/descripción).
+items: lista de PRODUCTOS (líneas comerciales, UNA por fila física de la tabla).
 packages: lista de BULTOS FÍSICOS (cajas, pallets, drums, etc.).
 Un mismo producto puede estar repartido en varios bultos, y un bulto puede contener varios productos.
 Si el packing list solo enumera bultos sin desglose por producto, llena packages y deja items con un solo elemento que describa el contenido genérico, o vacío [].
 Si solo enumera productos sin enumerar bultos físicos, llena items y deja packages vacío [].
 Si hay ambas vistas, llena ambas listas.
 
-CONSOLIDACIÓN POR SKU — CRÍTICO: Si el mismo reference_code/SKU aparece en MÚLTIPLES filas (por ejemplo, una fila por número de caja/cartón), NO crees un item por fila de caja. Agrúpalas en UN SOLO item usando la fila de SUBTOTAL/TOTAL de ese SKU.
-- Indicadores de fila de subtotal: aparece al final del grupo del mismo SKU; sus valores de Q'ty/N.W./G.W. son la suma de las filas individuales; o la fila no tiene número de caja.
-- Las filas individuales de cartón (con número de caja/CTN#) → van a packages[], NO a items[].
-- NUNCA dupliques el mismo SKU en items[] con filas de distintas cajas. Si hay 7 filas para "GWIS-42A" (CTN1…CTN7) más una fila subtotal, crea UN item con los datos del subtotal.
-- Si no hay fila de subtotal, usa la SUMA como valor — espera, NO: si no hay subtotal impreso, devuelve null para ese campo (Regla 6 prohíbe calcular). En ese caso deja quantity=null y extrae los datos que sí estén.
+EXTRACCIÓN POR FILAS — REGLA FUNDAMENTAL: Cada FILA FÍSICA de la tabla de items = UN objeto en items[].
+- Si la columna "Package No." muestra un rango (ej. "6-7", "8-17"), eso es UNA sola fila → UN solo item. NO la dividas en entradas individuales.
+- Si el mismo Part No./SKU aparece en DOS FILAS DISTINTAS (ej. en distintos rangos de caja), crea DOS items separados, uno por fila.
+- NO intentes consolidar, fusionar ni agrupar filas. NO calcules totales entre filas.
+- El número total de items[] debe ser igual al número de filas de datos en la tabla (excluyendo la fila de encabezado y la fila de totales).
 
 2. UNIDAD DE MEDIDA vs ATRIBUTO
 unit_of_measure mide CUÁNTOS hay del producto. Material, color, tipo, fabric NO son unidades — van a additional_attributes.
@@ -122,17 +122,30 @@ unit_of_measure mide CUÁNTOS hay del producto. Material, color, tipo, fabric NO
 gross_weight_kg incluye el embalaje. net_weight_kg es solo la mercancía. NO los confundas. Si el packing list usa "weight" sin especificar, asume gross_weight_kg salvo que el contexto indique lo contrario.
 
 3.b CANTIDAD vs PESO — ERROR FRECUENTE EN PACKING LISTS DENSOS
-En tablas con columnas adyacentes Q'TY / N.W. / G.W. (cantidad, peso neto, peso bruto) es CRÍTICO no cruzar columnas. Pistas para mantenerlas separadas:
+En tablas con columnas adyacentes Q'TY / N.W. / G.W. (cantidad, peso neto, peso bruto) es CRÍTICO no cruzar columnas.
+
+ESTRUCTURA DE COLUMNAS CON "@" (muy común en packing lists japoneses/asiáticos):
+Si el documento tiene columnas: No.of Package | @ | Q'ty | Part No. | Net Weight | Total Net Wt | Gross Weight | Total Gross Wt
+- "@" = cantidad de piezas por caja (ej. 10 pcs/ctn)
+- "Q'ty" = total de piezas para esa fila (= No.of Package × @) → mapear a quantity
+- "Net Weight" = peso neto POR CAJA (en KG)
+- "Total Net Wt" = peso neto TOTAL de la fila (= No.of Package × Net Weight) → mapear a net_weight_kg
+- "Gross Weight" = peso bruto POR CAJA (en KG)
+- "Total Gross Wt" = peso bruto TOTAL de la fila (= No.of Package × Gross Weight) → mapear a gross_weight_kg
+Ejemplo concreto: fila "2 | 10 | 20 | GWIS-42A | 17.50 | 35.00 | 18.50 | 37.00"
+→ package_count=2, quantity=20, net_weight_kg=35.0, gross_weight_kg=37.0
+→ "35.00" es peso neto TOTAL, NO la cantidad. La cantidad es "20" (la columna Q'ty).
+
+REGLAS GENERALES:
 - quantity tiene unidad PCS/SETS/PR (piezas, sets, pares) y suele ser un entero "redondo" (10, 20, 50, 100).
-- net_weight_kg y gross_weight_kg vienen en KG, son números (a menudo con decimales) y siempre cumplen gross >= net en la misma fila.
-- Ejemplo: una fila con "2 CTNS / 20 PCS / 35.00 KG / 37.00 KG" se mapea a package_count=2, quantity=20, net_weight_kg=35.0, gross_weight_kg=37.0. NO pongas quantity=35.
+- net_weight_kg y gross_weight_kg vienen en KG y siempre cumplen gross >= net en la misma fila.
 - Si una "cantidad" no es un entero redondo y tiene decimales tipo .56 o .43, casi seguro es peso, no cantidad.
 Re-lee la fila completa contrastando con el encabezado antes de asignar.
 
 CHEQUEO ANTI-CONFUSIÓN DE COLUMNAS: Antes de cerrar cada item, verifica:
-(a) quantity ≠ net_weight_kg. Si son iguales (o difieren en menos de 0.5), hay confusión de columna — re-lee la fila desde cero.
-(b) quantity < gross_weight_kg en casi todos los casos de piezas industriales. Si quantity > gross_weight_kg × 10, probablemente estás leyendo KG como PCS.
-(c) La columna PCS/Q'TY aparece ANTES que N.W. y G.W. en el encabezado. Sigue ese orden para asignar valores numéricos de izquierda a derecha.
+(a) quantity ≠ net_weight_kg. Si son iguales (o difieren en menos de 0.5), hay confusión de columna — re-lee la fila desde cero identificando la columna "Q'ty" explícitamente.
+(b) "Total Net Wt" y "Total Gross Wt" son SIEMPRE pesos, nunca cantidades de piezas, aunque sean números enteros.
+(c) La columna Q'ty SIEMPRE viene ANTES que las columnas de peso en el encabezado.
 
 3.c ORIGEN DEL ITEM vs UBICACIÓN DEL SHIPPER
 country_of_origin de un item es el país DONDE SE MANUFACTURÓ la mercancía, NO el país donde está el shipper/exportador.
