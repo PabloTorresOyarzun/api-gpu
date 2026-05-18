@@ -98,120 +98,58 @@ def _get_bbox(text_line):
     return None
 
 
-def _cluster_columns(x_starts: list, tolerance: float = 40.0) -> list:
-    """Agrupa posiciones x en centros de columna por proximidad."""
-    if not x_starts:
+def _group_text_lines(text_lines, v_gap_px: int = 50):
+    """
+    Agrupa líneas consecutivas que estén a menos de v_gap_px píxeles de distancia vertical.
+    Líneas en columnas horizontalmente separadas (>100px sin overlap) inician un bloque nuevo.
+    NO reordena — preserva el orden original de Surya en todo momento.
+
+    v_gap_px=50: a 500 DPI un interlineado normal (~17px) queda dentro del bloque;
+    un salto de párrafo (~80-100px) abre uno nuevo.
+    """
+    if not text_lines:
         return []
-    sorted_xs = sorted(x_starts)
-    clusters = [[sorted_xs[0]]]
-    for x in sorted_xs[1:]:
-        if x - clusters[-1][-1] <= tolerance:
-            clusters[-1].append(x)
-        else:
-            clusters.append([x])
-    return [sum(c) / len(c) for c in clusters]
 
+    groups = []
+    current_group = [text_lines[0]]
 
-def _try_render_table(block_rows: list) -> str | None:
-    """
-    Intenta renderizar un bloque de filas como tabla Markdown.
-    block_rows: lista de filas, cada fila es lista de (x_start, text).
-    Retorna string Markdown si ≥3 filas tienen ≥3 columnas, else None.
-    """
-    multi_cell = [r for r in block_rows if len(r) >= 3]
-    if len(multi_cell) < 3 or len(multi_cell) < len(block_rows) * 0.4:
-        return None
+    for line in text_lines[1:]:
+        prev_bbox = _get_bbox(current_group[-1])
+        curr_bbox = _get_bbox(line)
 
-    all_x = [x for row in block_rows for (x, _) in row]
-    col_centers = _cluster_columns(all_x, tolerance=40.0)
-    if len(col_centers) < 3:
-        return None
-
-    md_rows = []
-    for row in block_rows:
-        if not row:
+        if prev_bbox is None or curr_bbox is None:
+            current_group.append(line)
             continue
-        grid = [""] * len(col_centers)
-        for x, text in sorted(row, key=lambda c: c[0]):
-            col_idx = min(range(len(col_centers)), key=lambda i: abs(col_centers[i] - x))
-            grid[col_idx] = (grid[col_idx] + " " + text).strip() if grid[col_idx] else text
-        md_rows.append("| " + " | ".join(grid) + " |")
 
-    return "\n".join(md_rows) if len(md_rows) >= 3 else None
+        vertical_gap = curr_bbox[1] - prev_bbox[3]  # top_curr - bottom_prev
+        h_overlap = min(prev_bbox[2], curr_bbox[2]) - max(prev_bbox[0], curr_bbox[0])
+        different_column = h_overlap < -100  # separados >100px horizontalmente
+
+        if vertical_gap <= v_gap_px and not different_column:
+            current_group.append(line)
+        else:
+            groups.append(current_group)
+            current_group = [line]
+
+    groups.append(current_group)
+    return groups
 
 
 def _reconstruct_text(text_lines) -> str:
     """
-    Reconstruye texto OCR con detección de tablas.
-    - Regiones de tabla (≥3 filas × ≥3 cols) → filas Markdown '| c1 | c2 | ... |'.
-    - Resto → [BLOQUE_N]...[/BLOQUE_N].
+    Agrupa líneas por proximidad espacial y las envuelve en [BLOQUE_N].
+    Preserva el orden original de Surya — nunca reordena líneas.
     """
-    if not text_lines:
-        return ""
-
-    # Extraer (y_center, x_start, text) de cada línea con bbox
-    items = []
-    no_bbox_texts = []
-    for tl in text_lines:
-        bbox = _get_bbox(tl)
-        text = getattr(tl, "text", "") or ""
-        if not text.strip():
-            continue
-        if bbox is None:
-            no_bbox_texts.append(text.strip())
-            continue
-        y_center = (bbox[1] + bbox[3]) / 2
-        items.append((y_center, bbox[0], text.strip()))
-
-    if not items and not no_bbox_texts:
-        return ""
-
-    items.sort(key=lambda v: v[0])
-
-    # Agrupar en filas visuales (líneas dentro de 15px de y_center)
-    rows: list = []  # cada fila: (y_anchor, [(x, text)])
-    if items:
-        row_y, row_cells = items[0][0], [(items[0][1], items[0][2])]
-        for y, x, text in items[1:]:
-            if abs(y - row_y) <= 15:
-                row_cells.append((x, text))
-            else:
-                rows.append((row_y, row_cells))
-                row_y, row_cells = y, [(x, text)]
-        rows.append((row_y, row_cells))
-
-    # Agrupar filas en bloques por salto vertical (>50px)
-    blocks: list = []
-    if rows:
-        current_block = [rows[0]]
-        for i in range(1, len(rows)):
-            if rows[i][0] - rows[i - 1][0] > 50:
-                blocks.append(current_block)
-                current_block = [rows[i]]
-            else:
-                current_block.append(rows[i])
-        blocks.append(current_block)
-
+    groups = _group_text_lines(text_lines)
     parts = []
-    bloque_n = 1
-    for block in blocks:
-        block_rows = [cells for (_, cells) in block]
-        table_md = _try_render_table(block_rows)
-        if table_md:
-            parts.append(table_md)
-        else:
-            lines = []
-            for cells in block_rows:
-                line = " ".join(t for _, t in sorted(cells, key=lambda c: c[0]))
-                if line:
-                    lines.append(line)
-            if lines:
-                parts.append(f"[BLOQUE_{bloque_n}]\n" + "\n".join(lines) + f"\n[/BLOQUE_{bloque_n}]")
-                bloque_n += 1
-
-    if no_bbox_texts:
-        parts.append(f"[BLOQUE_{bloque_n}]\n" + "\n".join(no_bbox_texts) + f"\n[/BLOQUE_{bloque_n}]")
-
+    n = 1
+    for group in groups:
+        lines = [getattr(tl, "text", "") or "" for tl in group]
+        lines = [l for l in lines if l.strip()]
+        if not lines:
+            continue
+        parts.append(f"[BLOQUE_{n}]\n" + "\n".join(lines) + f"\n[/BLOQUE_{n}]")
+        n += 1
     return "\n\n".join(parts)
 
 
@@ -311,14 +249,12 @@ def liberar_qwen():
 
 # Nota OCR que encabeza el prompt de usuario en todas las llamadas normales.
 _NOTA_OCR = (
-    "NOTA DE FORMATO: El texto fue extraído por OCR y organizado espacialmente. "
-    "Las regiones de texto libre aparecen en bloques [BLOQUE_N]...[/BLOQUE_N]; "
-    "las tablas detectadas se presentan como filas Markdown '| col1 | col2 | ... |' "
-    "donde cada '|' delimita una columna distinta — úsalo para identificar correctamente "
-    "a qué columna pertenece cada valor numérico. "
-    "Para texto en bloques: un teléfono, email o dirección dentro del mismo bloque que "
-    "el SELLER/SHIPPER pertenece a esa entidad; si está en un bloque distinto NO lo "
-    "asignes al vendedor ni viceversa."
+    "NOTA DE FORMATO: El texto fue extraído por OCR y organizado en bloques espaciales "
+    "[BLOQUE_N]...[/BLOQUE_N]. Las líneas dentro de un mismo bloque estaban físicamente "
+    "próximas en el documento original. Usa esto como pista contextual: un teléfono, "
+    "email o dirección que aparece dentro del mismo bloque que el nombre del SELLER o "
+    "SHIPPER pertenece a esa entidad; si está en un bloque distinto (por ejemplo, en el "
+    "pie de página o en el bloque del BUYER), NO lo asignes al vendedor ni viceversa."
 )
 
 # Campos por defecto de items para normalizar schema compacto (Qwen omite nulls).
