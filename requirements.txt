@@ -6,6 +6,7 @@ surya-ocr==0.17.1
 pdf2image
 requests
 json-repair>=0.30.0
+pydantic>=2.0
 litestar[standard]
 python-multipart
 # Doc Toolkit (modulo_tratamiento)

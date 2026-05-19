@@ -14,6 +14,7 @@ from surya.detection import DetectionPredictor
 from surya.foundation import FoundationPredictor
 
 from ..prompts import transporte, factura, lista_embalaje, certificado_origen
+from ..schemas import SCHEMA_MAP
 from ...utils.standards import corregir_direcciones_chilenas
 
 logger = logging.getLogger(__name__)
@@ -237,29 +238,42 @@ def _llamar_qwen(
     timeout: int = 600,
     seed: int = 42,
     keep_alive: int = 300,
+    format_schema: dict | None = None,
 ) -> str:
-    respuesta = requests.post(
-        URL_OLLAMA,
-        json={
-            "model": MODELO,
-            "system": prompt_sistema,
-            "prompt": prompt_usuario,
-            "format": "json",
-            "stream": False,
-            "think": False,
-            "keep_alive": keep_alive,
-            "options": {
-                "num_ctx": num_ctx,
-                "num_predict": num_predict,
-                "temperature": 0,
-                "top_p": 0.9,
-                "top_k": 20,
-                "repeat_penalty": 1.0,
-                "seed": seed,
-            },
+    """
+    Llama a Ollama. Si format_schema viene seteado, fuerza la salida al JSON Schema
+    (constrained generation de Ollama ≥ 0.5). Si la versión de Ollama no lo soporta,
+    cae automáticamente a format="json".
+    """
+    fmt = format_schema if format_schema is not None else "json"
+    payload = {
+        "model": MODELO,
+        "system": prompt_sistema,
+        "prompt": prompt_usuario,
+        "format": fmt,
+        "stream": False,
+        "think": False,
+        "keep_alive": keep_alive,
+        "options": {
+            "num_ctx": num_ctx,
+            "num_predict": num_predict,
+            "temperature": 0,
+            "top_p": 0.9,
+            "top_k": 20,
+            "repeat_penalty": 1.0,
+            "seed": seed,
         },
-        timeout=timeout,
-    )
+    }
+    respuesta = requests.post(URL_OLLAMA, json=payload, timeout=timeout)
+
+    # Fallback: si Ollama rechaza el schema (versión vieja u otro motivo), reintenta con format="json".
+    if respuesta.status_code != 200 and format_schema is not None:
+        logger.warning(
+            f"Ollama rechazó format=schema ({respuesta.status_code}). Reintentando con format='json'."
+        )
+        payload["format"] = "json"
+        respuesta = requests.post(URL_OLLAMA, json=payload, timeout=timeout)
+
     if respuesta.status_code != 200:
         raise RuntimeError(f"Error de Ollama: {respuesta.status_code} - {respuesta.text}")
     return respuesta.json().get("response", "")
@@ -339,6 +353,34 @@ def _rellenar_items(resultado: dict, tipo: str) -> dict:
     return resultado
 
 
+def _get_format_schema(tipo: str) -> dict | None:
+    """Devuelve el JSON Schema generado por Pydantic para forzar el output de Ollama, o None."""
+    model_cls = SCHEMA_MAP.get(tipo)
+    if model_cls is None:
+        return None
+    return model_cls.model_json_schema()
+
+
+def _validar_con_pydantic(resultado: dict, tipo: str) -> dict:
+    """
+    Valida y normaliza el resultado contra el schema Pydantic del tipo.
+    - Mapea aliases (total → total_amount, incoterms → incoterm, etc.).
+    - Descarta claves no declaradas.
+    - Rellena con defaults los campos faltantes.
+    Si el tipo no tiene schema registrado, devuelve el dict tal cual.
+    Si la validación lanza error, loguea y devuelve el dict crudo (no rompe el flujo).
+    """
+    model_cls = SCHEMA_MAP.get(tipo)
+    if model_cls is None:
+        return resultado
+    try:
+        validado = model_cls.model_validate(resultado)
+        return validado.model_dump(mode="json")
+    except Exception as e:
+        logger.warning(f"Validación Pydantic falló para {tipo} ({e}); devolviendo dict crudo.")
+        return resultado
+
+
 def _es_documento_grande(texto: str, tipo: str) -> bool:
     return tipo in _TIPOS_CHUNKEABLE and len(texto.split()) > _UMBRAL_PALABRAS_GRANDE
 
@@ -349,11 +391,14 @@ def _split_por_paginas(texto: str) -> list[str]:
 
 def _extraer_documento_simple(texto: str, tipo: str, prompt_sistema: str, limites: dict) -> dict:
     prompt_usuario = _build_prompt_usuario(texto)
+    schema = _get_format_schema(tipo)
     res_json = _llamar_qwen(
         prompt_sistema, prompt_usuario,
         limites["num_ctx"], limites["num_predict"], limites["timeout"],
+        format_schema=schema,
     )
     resultado = _parse_json_con_fallback(res_json, prompt_sistema, prompt_usuario, tipo, limites)
+    resultado = _validar_con_pydantic(resultado, tipo)
     return _rellenar_items(resultado, tipo)
 
 
@@ -361,11 +406,14 @@ def _extraer_chunk(args: tuple) -> tuple[int, dict]:
     """Worker para ThreadPoolExecutor: extrae un chunk de página y devuelve (idx, resultado)."""
     idx, pagina, tipo, prompt_sistema, limites, es_continuacion = args
     prompt_usuario = _build_prompt_usuario(pagina, es_continuacion=es_continuacion)
+    schema = _get_format_schema(tipo)
     res_json = _llamar_qwen(
         prompt_sistema, prompt_usuario,
         limites["num_ctx"], limites["num_predict"], limites["timeout"],
+        format_schema=schema,
     )
     resultado = _parse_json_con_fallback(res_json, prompt_sistema, prompt_usuario, tipo, limites)
+    resultado = _validar_con_pydantic(resultado, tipo)
     return idx, _rellenar_items(resultado, tipo)
 
 
@@ -454,12 +502,15 @@ def _parse_json_con_fallback(res_json: str, prompt_sistema: str, prompt_usuario:
     except Exception as e:
         logger.warning(f"json_repair falló para {tipo_documento}: {e}")
 
+    schema = _get_format_schema(tipo_documento)
+
     # Etapa 3: retry con misma config + seed distinta (descarta alucinación puntual)
     logger.warning(f"Reintentando {tipo_documento} con seed alternativa (misma config).")
     res_json_2 = _llamar_qwen(
         prompt_sistema, prompt_usuario,
         limites["num_ctx"], limites["num_predict"], limites["timeout"],
         seed=1337,
+        format_schema=schema,
     )
     json_str_2 = _extraer_json_str(res_json_2)
     if json_str_2:
@@ -486,6 +537,7 @@ def _parse_json_con_fallback(res_json: str, prompt_sistema: str, prompt_usuario:
     res_json_3 = _llamar_qwen(
         prompt_sistema, prompt_usuario,
         num_ctx=retry_ctx, num_predict=retry_predict, timeout=retry_timeout,
+        format_schema=schema,
     )
     json_str_3 = _extraer_json_str(res_json_3)
     if json_str_3:
