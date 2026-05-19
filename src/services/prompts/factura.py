@@ -175,7 +175,7 @@ Lo mismo aplica para otros campos repetidos por línea (ej. contract_number).
 description: texto NARRATIVO que describe la mercancía en lenguaje natural. Debe contener palabras que explican QUÉ ES el producto (ej. "SUN BRAND TIMING BELT OF JAPANESE ORIGIN", "COTTON FABRIC PLAIN WEAVE", "ELECTRIC MOTOR 220V"). NUNCA pongas en description un código alfanumérico puro, un número de parte, una referencia de aplicación o un código de pieza — eso va en reference_code o additional_attributes. Si el campo que parece descripción contiene SOLO códigos/números (ej. "13568-87181", "TB-K070-2", "96183353"), no lo pongas en description sino en reference_code o additional_attributes.application_code según corresponda.
 reference_code: SKU, código de producto, item code, style, model number, part number — cualquier identificador alfanumérico del producto. NO confundir con line_number (número de orden de la fila) ni con HS code.
 hs_code: código arancelario internacional de 6+ dígitos. Si no aparece explícito, NO inventes uno aunque puedas adivinar.
-country_of_origin: país donde se FABRICÓ el item (puede diferir del país del seller).
+country_of_origin: país donde se FABRICÓ el item (puede diferir del país del seller). Si el documento no lo declara por línea pero el incoterm o el encabezado indica un único país de origen claro (ej. "FOB BANGKOK, THAILAND", "MADE IN THAILAND", "COUNTRY OF ORIGIN: THAILAND"), propaga ese país a TODOS los items. Solo propaga si hay indicación explícita; si no, deja null.
 MAPEO DE COLUMNAS — en facturas con múltiples columnas (especialmente autopartes, repuestos, componentes electrónicos), identifica qué columna contiene texto descriptivo y cuál contiene códigos. La columna con WORDS/TEXTO NATURAL va a description; la columna con CÓDIGOS/NÚMEROS-ALFANUMÉRICOS va a reference_code o additional_attributes. Columnas típicas de aplicación vehicular ("Applied To", "Application", "Fits", "Compatible With", códigos de motor/modelo) → additional_attributes.vehicle_application. NO inviertas las columnas.
 PROHIBIDO CALCULAR — TRANSCRIPCIÓN LITERAL: TODOS los valores numéricos del esquema (quantity, unit_price, line_total, subtotal, total_amount, discount_*, tax amounts, freight_cost, insurance_cost, etc.) son datos que aparecen IMPRESOS en el documento. Tu trabajo es transcribirlos tal cual están escritos. Nunca los calcules, nunca los sumes, nunca los infieras.
 - Cada campo numérico tiene su celda/sección impresa en el documento. Si no la encuentras, devuelve null. NO completes valores ausentes mediante operaciones aritméticas (sumas de líneas, multiplicación qty × unit_price, restas de totales, divisiones para tasas, etc.).
@@ -204,9 +204,12 @@ payment_method: el MECANISMO ESTÁNDAR de pago, mapeado al vocabulario controlad
 - "OPEN_ACCOUNT" SOLO aplica si las condiciones indican expresamente cuenta abierta / crédito puro a plazo SIN un mecanismo bancario específico (ej. "Net 30", "Net 60", "Open Account 90 days") y NO hay depósitos ni LC ni T/T mencionado. NO uses OPEN_ACCOUNT como default cuando hay términos como depósito + saldo.
 - Si las condiciones son ambiguas o no calzan claramente con el vocabulario, devuelve null. Es preferible null a una clasificación incorrecta.
 payment_terms siempre se llena con el texto literal aunque payment_method sea null.
+DETECCIÓN DE L/C: si el documento menciona "L/C", "Letter of Credit", "Carta de Crédito" seguido de un número (ej. "L/C NO.K114726"), ese número y toda la descripción de condiciones (banco emisor, vencimiento, etc.) deben capturarse COMPLETAMENTE en payment_terms como texto literal. Ejemplo: "L/C NO.K114726 ISSUE BY BANCO SANTANDER CHILE". No pierdas el número de L/C — es información regulatoria crítica.
 
 12. DATOS DE TRANSPORTE EN LA FACTURA
 Si la factura referencia el embarque (vessel, BL/AWB, ports, container numbers, weights), llena el bloque shipment. Esta información cruza con el BL en aduana. Si la factura no incluye estos datos, devuelve los campos en null.
+container_numbers: lista SOLO de números de contenedor EXPLÍCITAMENTE impresos en la factura (formato ISO 6346: 4 letras + 7 dígitos, ej: HLHU8423392). Si el número no aparece en la factura (solo en el B/L u otro documento), devuelve []. NUNCA inventes ni rellenes con placeholders. Un "1234567890" o similar que no sea ISO 6346 válido es una alucinación — descártalo.
+vessel_or_flight: transcribe exactamente como aparece en la factura. Si el OCR produjo un nombre incompleto o truncado, transfiere el fragmento visible sin completarlo.
 INFERENCIA DE transport_mode:
 - Si hay número de B/L (Bill of Lading) o puertos marítimos (port of loading/discharge) → transport_mode: "SEA".
 - Si el incoterm es FAS, FOB, CFR o CIF → son incoterms exclusivamente marítimos (Incoterms 2020) → transport_mode: "SEA".
@@ -247,6 +250,13 @@ NO apliques la regla si el outlier difiere en más de 2 caracteres, si no hay pa
 
 16. CLAVES DEL JSON
 Las claves del JSON DEBEN ser EXACTAMENTE las del esquema. NUNCA las traduzcas, renombres ni adaptes a las etiquetas del documento. additional_attributes es el ÚNICO lugar donde puedes usar claves libres.
+Errores PROHIBIDOS:
+- "incoterms" (con s) es INCORRECTO → usa "incoterm"
+- "shipments" (plural) es INCORRECTO → usa "shipment" (singular)
+- "total" a secas es INCORRECTO → usa "total_amount"
+- "incoterm_place" o "incoterm_city" son INCORRECTOS → usa "incoterm_location"
+- "references.sales_order" no existe en el esquema → si hay una referencia de orden de venta, usa "references.other"
+Si produces una clave que no está en el esquema, detente y corrígela antes de entregar el JSON.
 
 17. IDIOMA
 Los valores de texto se preservan en su idioma original (no traduzcas nombres, descripciones, direcciones). Solo normaliza formato (mayúsculas no son obligatorias).

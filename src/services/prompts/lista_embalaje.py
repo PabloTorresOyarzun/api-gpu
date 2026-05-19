@@ -136,6 +136,12 @@ Ejemplo concreto: fila "2 | 10 | 20 | GWIS-42A | 17.50 | 35.00 | 18.50 | 37.00"
 → package_count=2, quantity=20, net_weight_kg=35.0, gross_weight_kg=37.0
 → "35.00" es peso neto TOTAL, NO la cantidad. La cantidad es "20" (la columna Q'ty).
 
+ANTI-CONFUSIÓN PACKAGE_COUNT vs QUANTITY: En tablas con columna "No.of Package":
+- package_count = el valor de la columna "No.of Package" (número de cajas/cartones de esa fila)
+- quantity = el valor de la columna "Q'ty" (total de piezas de esa fila = No.of Package × @)
+Ejemplo de ERROR: fila "3 | 4 | 12 | GWT-48A | ..." → package_count=3, quantity=12 (CORRECTO), NO quantity=3 (que sería el package_count).
+El campo "quantity" en items[] SIEMPRE mapea a la columna Q'ty, nunca a "No.of Package".
+
 REGLAS GENERALES:
 - quantity tiene unidad PCS/SETS/PR (piezas, sets, pares) y suele ser un entero "redondo" (10, 20, 50, 100).
 - net_weight_kg y gross_weight_kg vienen en KG y siempre cumplen gross >= net en la misma fila.

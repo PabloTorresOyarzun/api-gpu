@@ -183,7 +183,7 @@ En "marks", términos como "CY/CY", "FCL/FCL", "LCL/LCL", "DOOR/DOOR" son térmi
 11. SHIPPER vs CARRIER vs DELIVERY_AGENT
 shipper: el exportador (quien embarca la carga).
 carrier: la naviera/aerolínea/transportista que opera el transporte y emite el BL.
-delivery_agent: el agente físico que entrega en destino (suele aparecer en bloque "Delivery Agent" o "Notify in destination").
+delivery_agent: el agente en destino. Captura también el campo "Forwarding Agent References" del B/L en delivery_agent — ese bloque contiene el agente de carga/freight forwarder en destino con nombre, dirección, RUT y contacto.
 NO los confundas — son tres roles distintos.
 IDENTIFICADORES FISCALES POR PAÍS: asigna el tax_id a la entidad cuyo país coincide con el formato del identificador. RUT chileno (dígitos con puntos y guión terminando en letra/dígito, ej: "89.010.200-K") → entidad chilena. USCC chino (18 car. alfanuméricos) → entidad china. CNPJ brasileño (XX.XXX.XXX/XXXX-XX) → entidad brasileña. Si el formato no coincide con el país de una entidad, no lo asignes — busca la entidad correcta en el documento.
 
@@ -198,6 +198,14 @@ Las claves DEBEN coincidir EXACTAMENTE con las del esquema. NUNCA renombres clav
 
 14. IDIOMA
 Preserva los valores en su idioma original (no traduzcas nombres, direcciones, descripciones).
+
+14.b BL_TYPE — CLASIFICACIÓN MARÍTIMA
+Para B/L marítimos, la distinción MASTER vs HOUSE depende de quién emite el documento:
+- MASTER: emitido directamente por la naviera/carrier (Maersk, MSC, CMA CGM, Hapag-Lloyd, COSCO, Evergreen, Yang Ming, ONE, HMM, PIL, Prosperity Container Line, etc.). El carrier imprime su propio nombre en el membrete del B/L. El bl_number tiene formato propio de la naviera.
+- HOUSE: emitido por un NVOCC, freight forwarder o agente de carga (quienes no son la naviera que opera el buque). Suelen tener membrete del agente, no de la naviera. El shipper en el MBL es el forwarder, no el exportador real.
+Indicadores de HOUSE: el carrier del B/L es una empresa de logística/agencia de carga, no una naviera oceánica reconocida. Indicadores de MASTER: membrete con logo de naviera conocida, bl_number con prefijo del carrier.
+Si no puedes determinar con certeza, usa null.
+shipped_on_board_date: lee con cuidado la cláusula "SHIPPED ON BOARD" o el sello de abordo. OCR típicamente confunde "26" con "20", "6" con "0", "3" con "8". Si el B/L dice "26/03/2025", la fecha correcta es 2025-03-26, NO 2025-03-20.
 
 15. AIR WAYBILL (AWB) — REGLAS ESPECÍFICAS
 - bl_type: si el emisor es directamente una aerolínea (Qantas, LATAM Cargo, Lufthansa Cargo, Air France-KLM, etc.), es MASTER. Si el emisor es un forwarder/agente de carga aéreo, es HOUSE. La presencia del prefijo de aerolínea en el número (3 dígitos al inicio, ej: 081-61930466) indica MAWB emitido por la aerolínea.
