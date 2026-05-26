@@ -11,6 +11,8 @@ Separación clave:
   - GLM recibe recortes de la imagen ORIGINAL en color + sharpening propio → mejor OCR.
 """
 import io
+import os
+import json
 import base64
 import logging
 
@@ -29,7 +31,9 @@ _KEYWORDS_LEGAL = ["LIABILITY", "INDEMNIFY", "WARRANT", "JURISDICTION", "ARBITRA
 
 def _imagen_a_base64(pil_image) -> str:
     buf = io.BytesIO()
-    pil_image.save(buf, format="PNG")
+    if pil_image.mode in ("RGBA", "P"):
+        pil_image = pil_image.convert("RGB")
+    pil_image.save(buf, format="JPEG", quality=95)
     return base64.b64encode(buf.getvalue()).decode()
 
 
@@ -73,13 +77,16 @@ def _recortar(pil_image, bbox, padding: int = 10):
 def _leer_bloque(img_b64: str, bbox) -> str:
     """
     Lee un bloque con GLM-OCR.
-    Bloques de tabla (ratio ancho/alto > 5): corre ambos modos para no perder
-    texto flotante fuera de celdas (ej. "FOB SHANGHAI" encima de la tabla).
-    Bloques de texto: solo Text Recognition.
+    Bloques candidatos a tabla: ratio ancho/alto > 5 (headers tipo banda)
+    o área grande > 1M px (tabla de items completa, típicamente alta).
+    En esos casos corre Table Recognition además del Text Recognition
+    porque Text Recognition lee la tabla columna-por-columna en bloques altos.
     """
     w = bbox[2] - bbox[0]
     h = bbox[3] - bbox[1]
-    es_tabla = h > 0 and (w / h) > 5
+    area = w * h
+    ratio = (w / h) if h > 0 else 0
+    es_tabla = ratio > 5 or area > 1_000_000
 
     texto = _llamar_glm(img_b64, "Text Recognition: ")
     if es_tabla:
@@ -89,15 +96,55 @@ def _leer_bloque(img_b64: str, bbox) -> str:
     return texto
 
 
-def ocr_paginas_hybrid(imagenes_originales: list, imagenes_surya: list) -> dict:
+def _dump_hybrid_page(pdf_base: str, num_pagina: int, bboxes, bloques, partes_detalle, texto_final) -> None:
+    """Dump de debug del pipeline híbrido. Activado por OCR_DEBUG_DUMP=/dir."""
+    dump_dir = os.getenv("OCR_DEBUG_DUMP")
+    if not dump_dir:
+        return
+    try:
+        os.makedirs(dump_dir, exist_ok=True)
+        out_path = os.path.join(dump_dir, f"{pdf_base}_hybrid_p{num_pagina}.json")
+        data = {
+            "pagina": num_pagina,
+            "n_bboxes_surya": len(bboxes),
+            "n_bloques_agrupados": len(bloques),
+            "bloques": [
+                {
+                    "bbox": [round(float(v), 1) for v in b["bbox"]],
+                    "area": int(b["area"]),
+                    "es_tabla": b["es_tabla"],
+                    "ratio_w_h": round(b["ratio"], 2),
+                    "texto_glm": b["texto"],
+                }
+                for b in partes_detalle
+            ],
+            "texto_final": texto_final,
+        }
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        logger.info(f"Hybrid dump pág {num_pagina}: {out_path}")
+    except Exception as e:
+        logger.warning(f"Falló dump hybrid pág {num_pagina}: {e}")
+
+
+def ocr_paginas_hybrid(imagenes_originales: list, imagenes_surya: list, pdf_base: str = "doc") -> dict:
     """
-    Detección Surya (en imagenes_surya) → agrupamiento → GLM-OCR por bloque (en imagenes_originales).
+    Detección Surya (en batch) → agrupamiento → GLM-OCR por bloque (paralelizado).
     Devuelve {n: texto}.
     """
+    import concurrent.futures
+    max_workers_glm = int(os.getenv("MAX_WORKERS_GLM", "4"))
+    
     textos = {}
 
-    for i, (img_orig, img_surya) in enumerate(zip(imagenes_originales, imagenes_surya), 1):
-        bboxes = detectar_regiones([img_surya])[0]
+    logger.info(f"Detectando regiones en {len(imagenes_surya)} páginas con Surya (Batch)")
+    try:
+        todas_regiones = detectar_regiones(imagenes_surya)
+    except Exception as e:
+        logger.warning(f"Error en detectar_regiones batch: {e}. Cayendo a páginas vacías.")
+        todas_regiones = [[] for _ in imagenes_surya]
+
+    for i, (img_orig, img_surya, bboxes) in enumerate(zip(imagenes_originales, imagenes_surya, todas_regiones), 1):
         if not bboxes:
             logger.warning(f"Página {i}: Surya no detectó regiones")
             textos[i] = ""
@@ -106,11 +153,13 @@ def ocr_paginas_hybrid(imagenes_originales: list, imagenes_surya: list) -> dict:
         bloques = _agrupar_bboxes(bboxes, gap_vertical=40)
         logger.info(f"Página {i}: {len(bboxes)} bboxes → {len(bloques)} bloques para GLM-OCR")
 
-        partes = []
-        for bbox in bloques:
+        partes = [None] * len(bloques)
+        partes_detalle = [None] * len(bloques)
+        
+        def procesar_bloque(idx: int, bbox: list) -> tuple:
             area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
             if area < 1000:
-                continue
+                return idx, "", None
 
             recorte = _recortar(img_orig, bbox)
             recorte = _preprocess_crop_for_glm(recorte)
@@ -120,10 +169,33 @@ def ocr_paginas_hybrid(imagenes_originales: list, imagenes_surya: list) -> dict:
             except Exception as e:
                 logger.warning(f"GLM-OCR error bloque página {i}: {e}")
                 texto_bloque = ""
-            if texto_bloque.strip():
-                partes.append(texto_bloque)
+            
+            w = bbox[2] - bbox[0]
+            h = bbox[3] - bbox[1]
+            ratio = (w / h) if h > 0 else 0
+            detalle = {
+                "bbox": bbox,
+                "area": area,
+                "ratio": ratio,
+                "es_tabla": ratio > 5,
+                "texto": texto_bloque,
+            }
+            return idx, texto_bloque, detalle
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers_glm) as executor:
+            futures = [executor.submit(procesar_bloque, idx, bbox) for idx, bbox in enumerate(bloques)]
+            for future in concurrent.futures.as_completed(futures):
+                idx, texto_bloque, detalle = future.result()
+                if detalle:
+                    if texto_bloque.strip():
+                        partes[idx] = texto_bloque
+                    partes_detalle[idx] = detalle
+
+        partes = [p for p in partes if p is not None]
+        partes_detalle = [d for d in partes_detalle if d is not None]
 
         texto = "\n".join(partes)
+        _dump_hybrid_page(pdf_base, i, bboxes, bloques, partes_detalle, texto)
 
         texto_upper = texto.upper()
 
@@ -146,18 +218,25 @@ def ocr_paginas_hybrid(imagenes_originales: list, imagenes_surya: list) -> dict:
 
 
 def ocr_pdf_hybrid(ruta_pdf: str) -> str:
-    info = pdfinfo_from_path(ruta_pdf)
-    total = info["Pages"]
+    import concurrent.futures
+    logger.info(f"Extrayendo páginas del PDF: {ruta_pdf}")
+    # Extraer todas las imágenes a 300 DPI (suficiente para OCR, mucho más rápido que 500)
+    imagenes_originales = convert_from_path(ruta_pdf, dpi=300)
+    
+    logger.info(f"Preprocesando {len(imagenes_originales)} imágenes para Surya")
+    imagenes_surya = [None] * len(imagenes_originales)
+    
+    def procesar_img(idx: int, img):
+        return idx, _preprocess_image(img)
+        
+    with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as executor:
+        futures = [executor.submit(procesar_img, idx, img) for idx, img in enumerate(imagenes_originales)]
+        for future in concurrent.futures.as_completed(futures):
+            idx, processed = future.result()
+            imagenes_surya[idx] = processed
 
-    imagenes_originales = []
-    imagenes_surya = []
-    for n in range(1, total + 1):
-        imgs = convert_from_path(ruta_pdf, dpi=500, first_page=n, last_page=n)
-        for img in imgs:
-            imagenes_originales.append(img)
-            imagenes_surya.append(_preprocess_image(img))
-
-    textos = ocr_paginas_hybrid(imagenes_originales, imagenes_surya)
+    pdf_base = os.path.splitext(os.path.basename(ruta_pdf))[0]
+    textos = ocr_paginas_hybrid(imagenes_originales, imagenes_surya, pdf_base=pdf_base)
     return "\n\n--- NUEVA PAGINA ---\n\n".join(textos.get(i, "") for i in sorted(textos))
 
 

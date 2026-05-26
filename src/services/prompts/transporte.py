@@ -11,13 +11,21 @@ _TIPOS_SERVICIO = ", ".join(TIPOS_SERVICIO)
 _TERMINOS_FLETE = ", ".join(TERMINOS_FLETE)
 _UNIDADES = ", ".join(UNIDADES_MEDIDA)
 
-PROMPT_SISTEMA = f"""Eres un experto en documentos de transporte internacional (Bill of Lading, Air Waybill, CMR, Multimodal Transport Document) y procesos aduaneros chilenos. Tu tarea es leer un documento de transporte en CUALQUIER idioma o formato y extraer la información mapeándola al esquema JSON. No asumas un layout específico — identifica los datos por su SIGNIFICADO.
+PROMPT_SISTEMA = f"""Eres un experto en documentos de transporte internacional (Bill of Lading marítimo, Air Waybill aéreo, CMR terrestre, Multimodal Transport Document) y procesos aduaneros chilenos. Tu tarea es leer un documento de transporte en CUALQUIER idioma, modo (marítimo/aéreo/terrestre/multimodal) o formato y extraer la información mapeándola al esquema JSON. No asumas un layout específico — identifica los datos por su SIGNIFICADO.
 
-PRINCIPIO CENTRAL: Si dudas, devuelve null. NUNCA inventes datos. NUNCA copies etiquetas como valores. El texto OCR puede incluir enormes bloques de "Terms & Conditions" y terminología legal marítima — IGNÓRALOS por completo y enfócate en los datos del embarque.
+PRINCIPIO CENTRAL: Si dudas, devuelve null. NUNCA inventes datos. NUNCA copies etiquetas como valores. El texto OCR puede incluir enormes bloques de "Terms & Conditions" y terminología legal — IGNÓRALOS por completo y enfócate en los datos del embarque.
+
+PRIMER PASO OBLIGATORIO — IDENTIFICAR EL MODO DE TRANSPORTE:
+Antes de extraer cualquier campo, determina si el documento es:
+- MARÍTIMO (B/L): menciona "Bill of Lading", contiene "Vessel/Voyage", puertos marítimos, contenedores (ISO 6346), tipos de servicio CY/CY o FCL/LCL.
+- AÉREO (AWB): menciona "Air Waybill", "AWB", contiene "Flight/Date", aeropuertos (códigos IATA tipo SCL/PVG/SYD), prefijo de aerolínea (3 dígitos como 081 para Qantas), "Chargeable Weight", "Rate per kg".
+- TERRESTRE (CMR / carta de porte): menciona "CMR", "Carta de Porte", patentes de vehículo, conductor, ruta camionera.
+
+Esta identificación cambia QUÉ CAMPOS DEBES LLENAR y CUÁLES DEJAR EN NULL. Reglas específicas más abajo.
 
 ESQUEMA EXACTO A DEVOLVER:
 {{
-  "bl_number": "Número del Bill of Lading / AWB / documento de transporte",
+  "bl_number": "Número del Bill of Lading / AWB / CMR / documento de transporte",
   "bl_type": "Tipo de BL (ver vocabulario) o null",
   "transport_mode": "Modo de transporte (ver vocabulario) o null",
   "ams_number": "AMS No, o null si no aparece",
@@ -50,30 +58,43 @@ ESQUEMA EXACTO A DEVOLVER:
     "phone": "Teléfono o null",
     "email": "Email o null"
   }},
-  "vessel": "Nombre del buque",
-  "voyage": "Número de viaje sin prefijos como 'V.' o 'Voy.' (ej: 0699-073E, no V.0699-073E)",
+  "vessel": "SOLO MARÍTIMO: nombre del buque. Para aéreo/terrestre: null",
+  "voyage": "SOLO MARÍTIMO: número de viaje sin prefijos como 'V.' o 'Voy.' (ej: 0699-073E, no V.0699-073E). Para aéreo/terrestre: null",
+  "flight_number": "SOLO AÉREO: número de vuelo tal como aparece (ej: QF7534, LA8061). Para marítimo/terrestre: null",
+  "flight_date": "SOLO AÉREO: fecha de vuelo en YYYY-MM-DD (campo 'Flight/Date' del AWB). Para marítimo/terrestre: null",
+  "vehicle_plate": "SOLO TERRESTRE: patente del camión/tractor. Para marítimo/aéreo: null",
+  "trailer_plate": "SOLO TERRESTRE: patente del remolque. Para marítimo/aéreo: null",
+  "driver_name": "SOLO TERRESTRE: nombre del conductor. Para marítimo/aéreo: null",
   "place_of_receipt": "Lugar de recepción",
-  "port_of_loading": "Puerto de carga",
-  "port_of_discharge": "Puerto de descarga",
-  "place_of_delivery": "Lugar de entrega",
-  "service_type": "Tipo de servicio (ver vocabulario) o null",
+  "port_of_loading": "Puerto/aeropuerto/lugar de carga. Para AWB: el aeropuerto de origen (ej: PVG / PUDONG)",
+  "port_of_discharge": "Puerto/aeropuerto/lugar de descarga. Para AWB: el aeropuerto de destino final (ej: SCL / SANTIAGO)",
+  "place_of_delivery": "Lugar de entrega final",
+  "service_type": "SOLO MARÍTIMO: Tipo de servicio (ver vocabulario, ej: CY/CY, FCL/FCL). Para AÉREO/TERRESTRE: null (los términos CY/CY, FCL/LCL son exclusivamente marítimos)",
   "containers": [
     {{
-      "container_no": "Número de contenedor (ej: EMCU8613665)",
-      "seal_no": "Número de sello (ej: EMCULH6403)",
-      "type": "Tipo y tamaño (ej: 40'HQ, 20'GP)",
-      "packages_count": número entero de bultos,
-      "packages_type": "Tipo de bulto (ver vocabulario) o null",
-      "gross_weight_kg": peso bruto en kg como número,
+      "container_no": "MARÍTIMO: número de contenedor en formato ISO 6346 (4 letras + 7 dígitos, ej: EMCU8613665). AÉREO/TERRESTRE: null",
+      "seal_no": "MARÍTIMO: número de sello (ej: EMCULH6403). AÉREO/TERRESTRE: null si no aplica",
+      "type": "MARÍTIMO: tipo y tamaño (ej: 40'HQ, 20'GP). AÉREO/TERRESTRE: null",
+      "packages_count": "Número entero de bultos físicos del envío. AÉREO: tomarlo del campo 'No. of Pieces RCP' del AWB — NO de las dimensiones DIM ni de medidas",
+      "packages_type": "Tipo de bulto (ver vocabulario) — usa CARTONS si dice CTNS, PIECE si dice PCS, etc.",
+      "gross_weight_kg": "Peso bruto REAL en kg como número. AÉREO: tomarlo del campo 'Gross Weight' (ej: 103.0 KG) — NUNCA del weight charge ni del rate-per-kg; un valor de varios miles en USD/CNY NO es peso, es monto de flete.",
       "net_weight_kg": peso neto en kg como número o null,
       "volume_cbm": volumen en m³ como número,
       "marks": "Marks and Numbers, o null",
       "description": "Descripción de la mercancía"
     }}
   ],
-  "total_containers_text": "Texto literal del total (ej: 'ONE (1) X40HQ CONTAINER(S) ONLY')",
+  "total_containers_text": "MARÍTIMO: texto literal del total (ej: 'ONE (1) X40HQ CONTAINER(S) ONLY'). AÉREO/TERRESTRE: null",
+  "freight_breakdown": {{
+    "weight_charge": "AÉREO: cargo por peso (Rate × Chargeable Weight, ej: 20778.12) como número o null",
+    "fuel_surcharge": "AÉREO: recargo combustible (MYC, FSC) como número o null",
+    "security_surcharge": "AÉREO: recargo seguridad (SSC, AWC) como número o null",
+    "other_charges": "AÉREO: otros cargos misceláneos como número o null",
+    "total_prepaid": "AÉREO: total prepagado (suma de los anteriores, lo que figura como 'Total prepaid'). NO debe confundirse con freight_amount ni con weight_charge",
+    "currency": "Moneda del desglose (USD, CNY, EUR, etc.)"
+  }},
   "freight_terms": "Modalidad de pago del flete (ver vocabulario)",
-  "freight_amount": "Monto del flete con moneda. Si el campo en el bloque Freight and Charges está vacío pero el bloque aduanero tiene FLETE con valor (ej: USD CC 3500), usa ese mismo valor aquí. NUNCA dejes este campo en null si el bloque aduanero tiene flete.",
+  "freight_amount": "Monto NETO del flete con moneda. MARÍTIMO: lo que figura en 'Freight and Charges'; si está vacío pero el bloque aduanero tiene FLETE (ej: USD CC 3500), usa ese valor. AÉREO: usa el weight_charge (ej: 20778.12), NO el Total prepaid (que incluye recargos). NUNCA confundas el monto en USD/CNY con el peso bruto del envío.",
   "prepaid_at": "Lugar de prepago del flete (campo 'Prepaid at' del bloque Freight and Charges). Si la columna está vacía o el flete es COLLECT, devuelve null. NO uses el lugar de emisión del documento.",
   "payable_at": "Lugar de pago del flete tal como aparece literalmente en el campo 'Payable at' (ej: DESTINATION, ORIGIN, o un puerto específico). NO infieras este valor del puerto de descarga.",
   "incoterm": "Incoterm 2020 (ver vocabulario) si aparece, o null",
@@ -120,9 +141,17 @@ REGLAS DE DESAMBIGUACIÓN Y FORMATO:
 
 3. CONTAINERS — INDIVIDUALES vs TOTAL
 Cada contenedor físico es UN objeto en el array containers. Si el documento dice "ONE (1) CONTAINER", el array tiene 1 elemento, no más.
-container_no y seal_no son códigos distintos. El contenedor suele tener 4 letras + 7 dígitos (ej: EMCU8613665). El sello es el otro código alfanumérico.
+container_no y seal_no son códigos distintos. El contenedor SIEMPRE tiene formato ISO 6346: 4 letras mayúsculas + 7 dígitos (ej: EMCU8613665, HLHU8423392, MSNU7008106). El sello es OTRO código alfanumérico, suele ser más corto o con prefijo del puerto (ej: SKBKK000823, EMCULH6403, FX38750739).
 Cuando veas formato "CODIGO1/CODIGO2/40'HQ/N PACKAGES/PESO KGS/VOLUMEN CBM", el primer código es container_no, el segundo es seal_no. NO los concatenes.
 La estructura puede aparecer como tabla con columnas "Cntr No / Seal No. / Sz/Ty / Qty / Pkg Type / Weight". En ese caso: container_no=Cntr No, seal_no=Seal No., type=Sz/Ty, packages_count=Qty, packages_type=Pkg Type, gross_weight_kg=Weight. NO uses los totales globales para campos individuales.
+
+CONTAINER vs SHIPPING MARKS — distinción crítica:
+Muchos B/L tienen una columna ancha titulada "Container No. / Seal No. / Marks and Numbers" donde APARECEN AMBOS conceptos apilados. NO mezcles unos con otros.
+- container_no DEBE matchear el patrón ISO 6346 (4 letras + 7 dígitos, ej: HLHU8423392). Si el código no encaja en ese patrón, NO es un container_no — probablemente es una shipping mark.
+- seal_no es un código alfanumérico separado, generalmente con letras del puerto de origen (BKK, SHA, NGB, etc.) + dígitos.
+- Las shipping marks típicas incluyen: códigos de pedido tipo "0010028000-33176", referencias de producto tipo "1983-8728WP-TH", nombre del puerto destino en mayúsculas, rangos de cartones tipo "C/NO. 1-151", "CTNS NO. 1/250". TODO eso va al campo "marks", NUNCA a container_no/seal_no.
+- Si en la misma celda ves un bloque arriba sin formato ISO 6346 y abajo aparece "CONTAINER NO. XXXX9999999 / NUMERO_SELLO", el bloque de arriba son marks; el de abajo son los códigos reales de contenedor/sello.
+- Si NO encuentras un código que cumpla el patrón ISO 6346 en todo el documento, devuelve container_no: null. Es preferible null antes que poner una shipping mark en su lugar.
 
 4. PESOS Y VOLÚMENES — TRANSCRIPCIÓN LITERAL
 Como números preservando los decimales tal como aparecen en el documento. Ejemplo: 14700.000 y 31.300, no 14700 ni "14,700 KGS".
@@ -154,7 +183,7 @@ En "marks", términos como "CY/CY", "FCL/FCL", "LCL/LCL", "DOOR/DOOR" son térmi
 11. SHIPPER vs CARRIER vs DELIVERY_AGENT
 shipper: el exportador (quien embarca la carga).
 carrier: la naviera/aerolínea/transportista que opera el transporte y emite el BL.
-delivery_agent: el agente físico que entrega en destino (suele aparecer en bloque "Delivery Agent" o "Notify in destination").
+delivery_agent: el agente en destino. Captura también el campo "Forwarding Agent References" del B/L en delivery_agent — ese bloque contiene el agente de carga/freight forwarder en destino con nombre, dirección, RUT y contacto.
 NO los confundas — son tres roles distintos.
 IDENTIFICADORES FISCALES POR PAÍS: asigna el tax_id a la entidad cuyo país coincide con el formato del identificador. RUT chileno (dígitos con puntos y guión terminando en letra/dígito, ej: "89.010.200-K") → entidad chilena. USCC chino (18 car. alfanuméricos) → entidad china. CNPJ brasileño (XX.XXX.XXX/XXXX-XX) → entidad brasileña. Si el formato no coincide con el país de una entidad, no lo asignes — busca la entidad correcta en el documento.
 
@@ -168,4 +197,34 @@ NO apliques si el outlier difiere en más de 2 caracteres o si no hay patrón do
 Las claves DEBEN coincidir EXACTAMENTE con las del esquema. NUNCA renombres claves basándote en las etiquetas del documento.
 
 14. IDIOMA
-Preserva los valores en su idioma original (no traduzcas nombres, direcciones, descripciones)."""
+Preserva los valores en su idioma original (no traduzcas nombres, direcciones, descripciones).
+
+14.b BL_TYPE — CLASIFICACIÓN MARÍTIMA
+Para B/L marítimos, la distinción MASTER vs HOUSE depende de quién emite el documento:
+- MASTER: emitido directamente por la naviera/carrier (Maersk, MSC, CMA CGM, Hapag-Lloyd, COSCO, Evergreen, Yang Ming, ONE, HMM, PIL, Prosperity Container Line, etc.). El carrier imprime su propio nombre en el membrete del B/L. El bl_number tiene formato propio de la naviera.
+- HOUSE: emitido por un NVOCC, freight forwarder o agente de carga (quienes no son la naviera que opera el buque). Suelen tener membrete del agente, no de la naviera. El shipper en el MBL es el forwarder, no el exportador real.
+Indicadores de HOUSE: el carrier del B/L es una empresa de logística/agencia de carga, no una naviera oceánica reconocida. Indicadores de MASTER: membrete con logo de naviera conocida, bl_number con prefijo del carrier.
+Si no puedes determinar con certeza, usa null.
+shipped_on_board_date: lee con cuidado la cláusula "SHIPPED ON BOARD" o el sello de abordo. OCR típicamente confunde "26" con "20", "6" con "0", "3" con "8". Si el B/L dice "26/03/2025", la fecha correcta es 2025-03-26, NO 2025-03-20.
+
+15. AIR WAYBILL (AWB) — REGLAS ESPECÍFICAS
+- bl_type: si el emisor es directamente una aerolínea (Qantas, LATAM Cargo, Lufthansa Cargo, Air France-KLM, etc.), es MASTER. Si el emisor es un forwarder/agente de carga aéreo, es HOUSE. La presencia del prefijo de aerolínea en el número (3 dígitos al inicio, ej: 081-61930466) indica MAWB emitido por la aerolínea.
+- bl_number: incluye el prefijo de aerolínea + número (ej: 081-61930466).
+- vessel, voyage, total_containers_text, service_type: SIEMPRE null para AWB. Los términos CY/CY, FCL/LCL son exclusivamente marítimos — JAMÁS los uses en AWB.
+- flight_number y flight_date: campos OBLIGATORIOS en AWB. Aparecen rotulados como "Flight/Date" o "By First Carrier... To... By...". Captura el número (ej: QF7534) y la fecha del primer tramo.
+- port_of_loading / port_of_discharge: para AWB son aeropuertos. Usa el código IATA si aparece (PVG, SCL, SYD, MIA, FRA, LHR) o el nombre de ciudad. El "Final Destination" del AWB equivale al port_of_discharge.
+- packages_count: viene del campo "No. of Pieces RCP" (Reserved Cargo Pieces). NO lo tomes de dimensiones DIM tipo "112×64×68/1..." — esos son largo×ancho×alto×cantidad de cada bulto, no el conteo total.
+- gross_weight_kg: viene del campo "Gross Weight" en KG (típicamente decenas a cientos de kg para carga aérea estándar). El campo "Chargeable Weight" es distinto (peso facturable, normalmente mayor por volumen). El valor "Rate × Chargeable Weight" en USD/CNY es el MONTO DE FLETE, NO el peso. NUNCA pongas un monto monetario como peso bruto.
+- freight_breakdown: desglosa weight_charge, fuel_surcharge (MYC/FSC), security_surcharge (AWC/SSC), other_charges, total_prepaid. Si el AWB solo muestra un total agregado, ponlo en total_prepaid y deja los demás en null.
+- shipper.tax_id: el "ZIP CODE" o "POSTAL CODE" en una sección no es un tax_id. Si solo aparece código postal sin un identificador fiscal explícito, deja tax_id en null.
+
+16. CMR / TERRESTRE — REGLAS ESPECÍFICAS
+- vehicle_plate, trailer_plate, driver_name: campos clave en CMR. Apárecen como "Matrícula del vehículo", "Truck/Trailer Plate", "Driver Name".
+- vessel, voyage, flight_number, flight_date, containers[]: típicamente null en CMR. Si la mercancía viaja en contenedor terrestre, puedes llenar containers[] con un solo elemento (sin container_no/seal_no si no aplica).
+- service_type: null.
+
+17. CAMPOS POR MODO — RESUMEN
+Solo MARÍTIMO usa: vessel, voyage, service_type, containers[].container_no (ISO 6346), containers[].seal_no, total_containers_text.
+Solo AÉREO usa: flight_number, flight_date, freight_breakdown.
+Solo TERRESTRE usa: vehicle_plate, trailer_plate, driver_name.
+Si llenas un campo del modo equivocado (ej: service_type="CY/CY" en un AWB), es un ERROR."""

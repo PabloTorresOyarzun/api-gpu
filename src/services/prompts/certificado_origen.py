@@ -133,7 +133,14 @@ invoice_reference es la factura comercial referenciada por el certificado, NO el
 Cualquier columna o campo que no calce con el esquema (ej. "lot", "batch", "manufacturing_date", "tariff_preference") → goods[].additional_attributes con clave en snake_case. No descartes datos.
 
 8. ENTIDAD CERTIFICADORA
-issuing_body es la organización que emite (cámara de comercio, ministerio, autoridad aduanera, etc.). NO es el exportador. Suele aparecer al pie del documento con sello y firma.
+issuing_body es la ORGANIZACIÓN que emite (cámara de comercio, ministerio, autoridad aduanera, etc.). NO es el exportador. Suele aparecer al pie del documento con sello y firma.
+CRÍTICO: issuing_body NUNCA puede ser un nombre de PAÍS (ej. "THAILAND", "CHINA", "JAPAN"). Un nombre de país va en issuing_country, no en issuing_body. Si el bloque de certificación muestra "Department of Foreign Trade", "Ministry of Commerce", "Thailand Chamber of Commerce", "JETRO", "CCPIT" u organismo similar → ese es el issuing_body. El país donde opera ese organismo es el issuing_country.
+stamp_present: busca activamente indicios de sello físico: áreas circulares o rectangulares con texto en arco/circular, sellos de "CERTIFIED", marcas de tinta azul/roja/negra, impresiones o relieves. Si el OCR capturó texto que parece parte de un sello o si el documento de comercio exterior de este tipo típicamente lleva sello (certificados de origen gubernamentales SIEMPRE llevan sello), marca stamp_present: true a menos que el documento esté claramente incompleto o sea un borrador.
+Box 14 / checkboxes: si el certificado tiene casillas marcadas (✓ / X / ■) para opciones como "Issued Retroactively", "Non-Party Invoicing", "Third Country Invoicing", "Exhibition", etc., captúralas en goods[0].additional_attributes (o en observations) con clave en snake_case:
+  - "issued_retroactively": true/false
+  - "non_party_invoicing": true/false (también conocido como "Third Party Invoicing" — indica facturación por empresa diferente al exportador)
+  - Otras opciones marcadas: capturarlas igualmente
+Estos flags son críticos — "non_party_invoicing" confirma casos de triangulación comercial (ej. Japan → Thailand → Chile con factura del país original).
 
 9. NORMALIZACIÓN
 - Direcciones en una sola línea con comas, sin saltos.

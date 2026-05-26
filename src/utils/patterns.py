@@ -55,10 +55,15 @@ PATRONES_INICIO = {
         "CERTIFICADO DE ORIGEN", "CERTIFICACION DE ORIGEN",
         # Inglés
         "CERTIFICATE OF ORIGIN", "CERTIFICATION OF ORIGIN",
+        # Formularios específicos de tratados de libre comercio
+        "FORM TC", "FORM A", "FORM E", "FORM AANZFTA", "FORM AKFTA",
+        "FREE TRADE AGREEMENT", "PREFERENTIAL TREATMENT",
+        "DECLARATION AND CERTIFICATE",
+        "ORIGIN CRITERION", "ORIGIN CRITERIA",
         # Alemán
         "URSPRUNGSZEUGNIS",
         # Portugués
-        "CERTIFICADO DE ORIGEM", 
+        "CERTIFICADO DE ORIGEM",
         # Neerlandés
         "CERTIFICAAT VAN OORSPRONG",
         # Francés

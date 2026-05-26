@@ -26,7 +26,9 @@ TIMEOUT_OCR_VL = int(os.getenv("TIMEOUT_OCR_VL", "600"))
 
 def _imagen_a_base64(pil_image) -> str:
     buf = io.BytesIO()
-    pil_image.save(buf, format="PNG")
+    if pil_image.mode in ("RGBA", "P"):
+        pil_image = pil_image.convert("RGB")
+    pil_image.save(buf, format="JPEG", quality=95)
     return base64.b64encode(buf.getvalue()).decode()
 
 
@@ -87,7 +89,7 @@ def ocr_paginas_glm(imagenes: list) -> dict:
     return textos
 
 
-def _pdf_a_imagenes_glm(ruta_pdf: str, dpi: int = 500) -> list:
+def _pdf_a_imagenes_glm(ruta_pdf: str, dpi: int = 300) -> list:
     """Convierte PDF a imágenes sin preprocesamiento — GLM-OCR lee mejor las imágenes originales."""
     info = pdfinfo_from_path(ruta_pdf)
     total = info["Pages"]
@@ -110,3 +112,12 @@ def procesar_pdf_glm(ruta_pdf: str, tipo_documento: str = "DOCUMENTO_TRANSPORTE"
     texto = ocr_pdf_glm(ruta_pdf)
     logger.info(f"[GLM-OCR] Texto extraído ({len(texto)} chars):\n{texto[:2000]}")
     return extraer_documento(texto, tipo_documento)
+
+
+def liberar_glm():
+    """Descarga GLM-OCR de la GPU (keep_alive=0)."""
+    try:
+        requests.post(URL_OLLAMA, json={"model": MODELO_OCR_VL, "keep_alive": 0}, timeout=15)
+        logger.info("GLM-OCR descargado de VRAM.")
+    except Exception as e:
+        logger.warning(f"No se pudo descargar GLM-OCR de VRAM: {e}")

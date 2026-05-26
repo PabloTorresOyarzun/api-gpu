@@ -1,3 +1,0 @@
-glmocr[selfhosted]
-flask
-PyYAML>=6.0
